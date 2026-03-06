@@ -10,3 +10,6 @@ config-verge.yaml
 # Логи
 log.txt
 *.log
+
+# IDE / Claude
+.claude/

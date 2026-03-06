@@ -50,7 +50,7 @@ Mihomo :7894  (правила из config.yaml)
 | Файл | Назначение |
 |------|-----------|
 | `config.example.yaml` | Шаблон конфига Mihomo — **заполни своими прокси** |
-| `agh/adguardhome.yaml` | Конфиг AdGuard Home с настройками фильтров и DNS |
+| `adguardhome/adguardhome.yaml` | Конфиг AdGuard Home — путь на роутере: `/etc/adguardhome/adguardhome.yaml` |
 | `README.md` | Этот файл |
 
 > Реальный `config.yaml` с ключами VPN хранится локально и **не публикуется** (в `.gitignore`).
