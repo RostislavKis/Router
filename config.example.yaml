@@ -1,0 +1,340 @@
+# config.example.yaml — шаблон конфига SSClash для GL-iNet Flint 2
+# Скопируй в config.yaml и заполни свои значения (отмечены YOUR_...)
+#
+# Чувствительные данные ЗАМЕНЕНЫ на плейсхолдеры:
+#   YOUR_VPN_SERVER        — домен/IP твоего VPN-сервера
+#   YOUR_UUID              — UUID VLESS
+#   YOUR_REALITY_PUBKEY    — Reality public key
+#   YOUR_REALITY_SHORTID   — Reality short-id
+#   YOUR_WS_PATH           — WebSocket path
+#   YOUR_WARP_PRIVKEY      — WireGuard private key (WARP/AmneziaWG)
+#   YOUR_WARP_PUBKEY       — WireGuard public key
+#   YOUR_AWG_HEX           — AmneziaWG hex-конфиг (i1/i2/j1)
+#   YOUR_NEXTDNS_ID        — ID профиля NextDNS (cffd45 и т.п.)
+#   YOUR_TROJAN_PASSWORD   — пароль Trojan-прокси
+
+mmdb-path: /opt/clash/geoip.db
+geodata-url:
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.db"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.db"
+
+mixed-port: 7890
+socks-port: 7891
+redir-port: 7892
+tproxy-port: 7894
+port: 7890
+allow-lan: true
+bind-address: '*'
+mode: rule
+authentication:
+  - "user:password"    # YOUR_ROUTER_PASSWORD
+log-level: info
+ipv6: false
+external-controller: 0.0.0.0:9090
+external-ui: /opt/clash/ui/xd
+external-ui-url: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip"
+
+tcp-fast-open: true
+udp-fragment: false
+enable-process: true
+routing-mark: 2
+
+profile:
+  store-selected: true
+  tracing: true
+
+keep-alive-idle: 15
+keep-alive-interval: 15
+
+tun:
+  enable: false
+  stack: system
+  auto-route: true
+  auto-redirect: true
+  auto-detect-interface: true
+  strict-route: true
+  device: utun
+  dns-hijack: []
+  route-exclude-address:
+    - 127.0.0.0/8
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 224.0.0.0/4
+
+# ============================================================
+# DNS — fake-ip на порту 1053 (AGH форвардит сюда с порта 53)
+# ============================================================
+dns:
+  enable: true
+  listen: '127.0.0.1:1053'
+  enhanced-mode: fake-ip
+  fake-ip-range: '198.18.0.1/16'
+  fake-ip-filter-mode: blacklist
+  prefer-h3: true
+  respect-rules: true
+  use-hosts: true
+  use-system-hosts: false
+  ipv6: false
+
+  default-nameserver:
+    - '1.1.1.1'
+    - '8.8.8.8'
+    - '9.9.9.9'
+
+  nameserver:
+    - 'https://dns.nextdns.io/YOUR_NEXTDNS_ID'
+    - 'https://dns.google/dns-query'
+    - 'https://dns.quad9.net/dns-query'
+
+  proxy-server-nameserver:
+    - 'https://dns.google/dns-query'
+    - 'https://dns.quad9.net/dns-query'
+
+  direct-nameserver-follow-policy: false
+  direct-nameserver:
+    - '1.1.1.1'
+    - '8.8.8.8'
+    - '9.9.9.9'
+
+  fallback:
+    - 'tls://8.8.8.8'
+    - 'tls://9.9.9.9'
+
+  fallback-filter:
+    geoip: true
+    geoip-code: 'RU'
+    ipcidr:
+      - '240.0.0.0/4'
+      - '0.0.0.0/32'
+    domain:
+      - '+google.com'
+      - '+facebook.com'
+      - '+youtube.com'
+
+  nameserver-policy:
+    +.generativelanguage.googleapis.com:
+      - 'https://dns.google/dns-query'
+    +.google.com:
+      - 'https://dns.google/dns-query'
+    +.ru:
+      - '1.1.1.1'
+      - '8.8.8.8'
+    +.su:
+      - '1.1.1.1'
+    +.yandex.ru:
+      - '1.1.1.1'
+    +.рф:
+      - '1.1.1.1'
+
+  fake-ip-filter:
+    - 'google-public-dns-a.google.com'
+    - 'google-public-dns-b.google.com'
+    - 'dns.google'
+    - 'dns.quad9.net'
+    - 'dnscheck.adguard.com'
+    - 'dns.adguard.com'
+    - '+.adguard.com'
+    - '+.ru'
+    - '+.рф'
+    - '+.su'
+    - '+.otpbank.ru'
+    - '+.ozon.ru'
+    - '+.wildberries.ru'
+    - '+.wb.ru'
+    - '+.ya.ru'
+    - '+.yandex.ru'
+    - '+.t2.ru'
+    - '+.tele2.ru'
+    - '+.mts.ru'
+    - '+.openwrt.org'
+    - '+.gl-inet.com'
+    - '+.github.com'
+    - '+.githubusercontent.com'
+    - '*.local'
+    - '*.lan'
+    - '*.home.arpa'
+    - '*.localdomain'
+    - '*.router'
+    - '*.in-addr.arpa'
+    - '*.ip6.arpa'
+    - 'msftconnecttest.com'
+    - '*.msftconnecttest.com'
+    - 'msftncsi.com'
+    - '*.msftncsi.com'
+    - 'connectivitycheck.gstatic.com'
+    - 'clients3.google.com'
+    - 'clients4.google.com'
+    - 'captive.apple.com'
+    - 'apple.com'
+    - '*.apple.com'
+    - '*.gstatic.com'
+    - 'miwifi.com'
+    - '*.miwifi.com'
+    - 'my.router'
+    - 'pool.ntp.org'
+    - '*.pool.ntp.org'
+    - 'time.google.com'
+    - 'time.cloudflare.com'
+
+sniffer:
+  enable: true
+  sniff-tls-sni: true
+  force-dns-mapping: false
+  parse-pure-ip: false
+
+hosts:
+  jackett: 127.0.0.1
+  flaresolverr: 127.0.0.1
+
+# ============================================================
+# WARP / AmneziaWG — общие параметры
+# ============================================================
+warp-common: &warp-common
+  type: wireguard
+  ip: 172.16.0.2
+  private-key: YOUR_WARP_PRIVKEY
+  public-key: YOUR_WARP_PUBKEY
+  allowed-ips: ['0.0.0.0/0']
+  reserved: [0, 0, 0]     # твои reserved bytes
+  udp: true
+  mtu: 1280
+  remote-dns-resolve: true
+  dns: [1.1.1.1, 1.0.0.1]
+  server: 162.159.192.1
+  port: 4500
+
+proxies:
+  # WARP
+  - name: "WARP-IPv4"
+    <<: *warp-common
+
+  # AmneziaWG (пример одного варианта — добавь свои)
+  - name: "AWG (Вариант 1)"
+    <<: *warp-common
+    amnezia-wg-option:
+      jc: 120
+      jmin: 23
+      jmax: 911
+      s1: 0
+      s2: 0
+      h1: 1
+      h2: 2
+      h4: 3
+      h3: 4
+      i1: <b YOUR_AWG_HEX>
+
+  # VLESS TCP (пример — дублируй для каждого сервера)
+  - name: "Finland · VLESS, TCP"
+    type: vless
+    server: YOUR_VPN_SERVER
+    port: 443
+    uuid: "YOUR_UUID"
+    udp: true
+    tls: true
+    servername: YOUR_VPN_SERVER
+    flow: xtls-rprx-vision
+    skip-cert-verify: false
+    client-fingerprint: random
+    network: tcp
+    reality-opts:
+      public-key: YOUR_REALITY_PUBKEY
+      short-id: YOUR_REALITY_SHORTID
+
+  # VLESS WS
+  - name: "Finland · VLESS, WS"
+    type: vless
+    server: YOUR_VPN_SERVER
+    port: 443
+    uuid: "YOUR_UUID"
+    udp: true
+    tls: true
+    skip-cert-verify: false
+    network: ws
+    ws-opts:
+      path: YOUR_WS_PATH
+      headers:
+        Host: YOUR_VPN_SERVER
+
+  # Trojan gRPC (пример)
+  - name: "Finland · Trojan, gRPC"
+    type: trojan
+    server: YOUR_VPN_SERVER
+    port: 443
+    password: YOUR_TROJAN_PASSWORD
+    udp: true
+    tls: true
+    skip-cert-verify: false
+    network: grpc
+    grpc-opts:
+      grpc-service-name: YOUR_GRPC_SERVICE
+
+# ============================================================
+# Прокси-группы
+# ============================================================
+proxy-groups:
+
+  # Основная группа — всё через неё
+  - name: "PROXY"
+    type: select
+    proxies:
+      - "BEST AUTO"
+      - "Finland · VLESS, TCP"
+      - "WARP-IPv4"
+      - DIRECT
+
+  # Авто-выбор лучшего
+  - name: "BEST AUTO"
+    type: url-test
+    proxies:
+      - "Finland · VLESS, TCP"
+      - "Finland · VLESS, WS"
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 120
+    tolerance: 50
+
+  # Gemini / Google AI — только ручной выбор
+  - name: "GEMINI"
+    type: select
+    proxies:
+      - "Finland · VLESS, TCP"
+      - "Finland · VLESS, WS"
+      - DIRECT
+
+  # Стриминг
+  - name: "STREAMING"
+    type: select
+    proxies:
+      - "PROXY"
+      - DIRECT
+
+  # Реклама
+  - name: "AD BLOCK"
+    type: select
+    proxies:
+      - REJECT
+      - DIRECT
+
+# ============================================================
+# Правила маршрутизации
+# ============================================================
+rules:
+  # Gemini / Google AI
+  - DOMAIN,gemini.google.com,GEMINI
+  - DOMAIN,notebooklm.google.com,GEMINI
+  - DOMAIN,aistudio.google.com,GEMINI
+  - DOMAIN,generativelanguage.googleapis.com,GEMINI
+
+  # Локальная сеть — всегда напрямую
+  - DOMAIN-SUFFIX,local,DIRECT
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+
+  # Россия — напрямую
+  - GEOIP,RU,DIRECT
+  - GEOSITE,ru,DIRECT
+
+  # Всё остальное — через прокси
+  - MATCH,PROXY
