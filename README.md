@@ -51,9 +51,37 @@ Mihomo :7894  (правила из config.yaml)
 |------|-----------|
 | `config.example.yaml` | Шаблон конфига Mihomo — **заполни своими прокси** |
 | `adguardhome/adguardhome.yaml` | Конфиг AdGuard Home — путь на роутере: `/etc/adguardhome/adguardhome.yaml` |
+| `patches/setup-adguardhome.sh` | Скрипт-патч: настраивает AGH под Mihomo fake-ip DNS |
 | `README.md` | Этот файл |
 
 > Реальный `config.yaml` с ключами VPN хранится локально и **не публикуется** (в `.gitignore`).
+
+---
+
+## Патч AdGuard Home
+
+Скрипт `patches/setup-adguardhome.sh` автоматически настраивает AGH:
+- upstream DNS → `127.0.0.1:1053` (Mihomo fake-ip)
+- отключает AAAA-запросы (совместимость с `ipv6: false` в Mihomo)
+- устанавливает логин и пароль администратора
+
+**Перед запуском** — открой файл и впиши свои данные:
+
+```sh
+# В файле patches/setup-adguardhome.sh замени:
+AGH_USER="root"                          # свой логин
+AGH_PASSWORD_HASH='$2y$10$REPLACE...'   # свой bcrypt хэш
+
+# Сгенерировать хэш пароля (на роутере):
+htpasswd -bnBC 10 "" YOUR_PASSWORD | tr -d ':\n'
+```
+
+**Запуск на роутере:**
+
+```sh
+scp patches/setup-adguardhome.sh root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "chmod +x /tmp/setup-adguardhome.sh && /tmp/setup-adguardhome.sh"
+```
 
 ---
 
