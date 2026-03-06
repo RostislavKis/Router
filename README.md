@@ -49,10 +49,43 @@ Mihomo :7894  (правила из config.yaml)
 
 | Файл | Назначение |
 |------|-----------|
-| `config.example.yaml` | Шаблон конфига Mihomo (без ключей и паролей) |
+| `config.example.yaml` | Шаблон конфига Mihomo — **заполни своими прокси** |
+| `agh/adguardhome.yaml` | Конфиг AdGuard Home с настройками фильтров и DNS |
 | `README.md` | Этот файл |
 
 > Реальный `config.yaml` с ключами VPN хранится локально и **не публикуется** (в `.gitignore`).
+
+---
+
+## Как подставить свои прокси в config.example.yaml
+
+Все proxy-серверы в шаблоне помечены плейсхолдерами. Замени их на свои значения:
+
+| Плейсхолдер | Что подставить |
+|-------------|---------------|
+| `YOUR_VPN_SERVER` | домен или IP твоего сервера, например `fi1.example.com` |
+| `YOUR_UUID` | UUID пользователя VLESS (генерируется на сервере) |
+| `YOUR_REALITY_PUBKEY` | Reality public key с сервера |
+| `YOUR_REALITY_SHORTID` | Reality short-id с сервера |
+| `YOUR_WS_PATH` | путь WebSocket, например `/abc123/ws` |
+| `YOUR_TROJAN_PASSWORD` | пароль Trojan-прокси |
+| `YOUR_WARP_PRIVKEY` | WireGuard private key (из WARP / AmneziaWG) |
+| `YOUR_WARP_PUBKEY` | WireGuard public key сервера |
+| `YOUR_AWG_HEX` | hex-конфиг AmneziaWG (поле `i1`) |
+| `YOUR_NEXTDNS_ID` | ID профиля NextDNS (из nexdns.io/setup) |
+| `YOUR_AGH_PASSWORD_HASH` | bcrypt хэш пароля AGH (см. ниже) |
+
+**Генерация bcrypt хэша для AGH:**
+```sh
+# На роутере или Linux
+htpasswd -bnBC 10 "" ВАШ_ПАРОЛЬ | tr -d ':\n'
+# Результат вставить в agh/adguardhome.yaml → users[0].password
+```
+
+**Минимальный набор прокси** — нужна хотя бы одна рабочая группа. Пример со своим сервером:
+1. В `proxies:` добавь свой сервер (VLESS / Trojan / WireGuard)
+2. В `proxy-groups:` пропиши его в группу `PROXY`
+3. Загрузи на роутер и перезапусти SSClash
 
 ---
 
