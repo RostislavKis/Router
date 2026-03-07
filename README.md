@@ -38,10 +38,10 @@ Mihomo :7894  (правила из config.yaml)
 
 | Компонент | Версия | Назначение |
 |-----------|--------|-----------|
-| OpenWrt | 25.12.0 | ОС роутера (aarch64, mediatek/filogic) |
+| OpenWrt | 25.12.0 r32713-f919e7899d | ОС роутера (aarch64, mediatek/filogic) |
 | SSClash / Mihomo | v1.19.20 | TPROXY + fake-ip DNS, порт 7894 |
 | AdGuard Home | latest | DNS-фильтрация, порт 53 / UI 3000 |
-| LuCI | 26.x | Веб-интерфейс управления |
+| LuCI | openwrt-25.12 branch 26.064.72454~b89e6b3 | Веб-интерфейс управления |
 | Proxy Optimizer | — | Набор скриптов оптимизации и стабилизации (patches/) |
 
 ---
@@ -242,7 +242,7 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 
 `Services → CF IP Optimizer` — единая панель управления.
 
-> Реализован на LuCI без Lua (OpenWrt 26.x) — JSON-меню + JS view.
+> Реализован на LuCI без Lua (OpenWrt 25.12 + LuCI 26.064) — JSON-меню + JS view.
 
 ### Секции
 
