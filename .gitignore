@@ -17,3 +17,6 @@ log.txt
 # Черновики постов
 TELEGRAM_POST.md
 FORUM_4PDA_POST.txt
+
+# Личный скрипт деплоя (содержит учётные данные)
+deploy.py
