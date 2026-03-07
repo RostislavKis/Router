@@ -1,0 +1,45 @@
+# 98-telegram-tproxy.nft
+# Route Telegram MTProto direct IP connections through Mihomo TPROXY.
+#
+# Problem:
+#   SSClash TPROXY intercepts only fake-ip range (198.18.0.0/16).
+#   Telegram MTProto connects directly to real IPs (149.154.x.x, 91.108.x.x)
+#   — these packets bypass Mihomo entirely and go to the internet unproxied.
+#
+# Solution:
+#   Mark Telegram IP ranges with 0x0001 at priority -200 (before SSClash
+#   mangle at -150). The existing "inet clash proxy" chain at priority -100
+#   then redirects marked packets via TPROXY to Mihomo port 7894.
+#   Mihomo applies IP-CIDR rules and routes to the TELEGRAM proxy group.
+#
+# Apply:  nft -f /etc/nftables.d/98-telegram-tproxy.nft
+# Remove: nft delete table inet telegram_tproxy
+
+table inet telegram_tproxy {
+    set addrs {
+        type ipv4_addr
+        flags interval
+        elements = {
+            149.154.160.0/20,
+            91.108.4.0/22,
+            91.108.8.0/22,
+            91.108.12.0/22,
+            91.108.16.0/22,
+            91.108.56.0/22,
+        }
+    }
+
+    chain prerouting {
+        type filter hook prerouting priority -200; policy accept;
+
+        # Skip WAN traffic (change pppoe-wan to your WAN interface if not using PPPoE)
+        iifname "pppoe-wan" return
+
+        # Skip Mihomo outbound traffic (routing-mark: 2)
+        meta mark 0x00000002 return
+
+        # Mark Telegram IPs for TPROXY (0x0001 -> table 100 -> lo -> port 7894)
+        ip daddr @addrs meta l4proto tcp meta mark set 0x00000001
+        ip daddr @addrs meta l4proto udp meta mark set 0x00000001
+    }
+}

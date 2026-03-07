@@ -72,7 +72,10 @@ echo "    wifi-optimize.sh    -> /usr/local/bin/"
 mkdir -p /etc/nftables.d
 cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/nftables.d/99-cf-dpi-bypass.nft
 chmod 644 /etc/nftables.d/99-cf-dpi-bypass.nft
-echo "    99-cf-dpi-bypass.nft -> /etc/nftables.d/"
+echo "    99-cf-dpi-bypass.nft    -> /etc/nftables.d/"
+cp "$SCRIPT_DIR/98-telegram-tproxy.nft" /etc/nftables.d/98-telegram-tproxy.nft
+chmod 644 /etc/nftables.d/98-telegram-tproxy.nft
+echo "    98-telegram-tproxy.nft  -> /etc/nftables.d/"
 
 mkdir -p /etc/sysctl.d
 cp "$SCRIPT_DIR/99-router-mem.conf" /etc/sysctl.d/99-router-mem.conf
@@ -240,9 +243,16 @@ sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/nftables.d/99-cf-dpi-bypa
 
 nft delete table inet cf_dpi_bypass 2>/dev/null || true
 if nft -f /etc/nftables.d/99-cf-dpi-bypass.nft 2>/dev/null; then
-    echo "    nftables rule applied (MSS=${MSS_VALUE})"
+    echo "    DPI bypass applied (MSS=${MSS_VALUE})"
 else
-    echo "    WARNING: nft failed - rule will apply on reboot"
+    echo "    WARNING: DPI bypass nft failed - rule will apply on reboot"
+fi
+
+nft delete table inet telegram_tproxy 2>/dev/null || true
+if nft -f /etc/nftables.d/98-telegram-tproxy.nft 2>/dev/null; then
+    echo "    Telegram TPROXY applied (149.154.x.x, 91.108.x.x -> Mihomo)"
+else
+    echo "    WARNING: Telegram TPROXY nft failed - rule will apply on reboot"
 fi
 
 # --- 6. Init script ---
@@ -270,6 +280,11 @@ start() {
         nft -f /etc/nftables.d/99-cf-dpi-bypass.nft 2>/dev/null || true
         logger -t cf-optimizer "DPI bypass (nftables MSS) applied"
     fi
+
+    # Telegram TPROXY — route direct IP connections through Mihomo
+    nft delete table inet telegram_tproxy 2>/dev/null || true
+    nft -f /etc/nftables.d/98-telegram-tproxy.nft 2>/dev/null || true
+    logger -t cf-optimizer "Telegram TPROXY rules applied"
 
     # Wait for Mihomo API, then run latency monitor and optional Xray
     (
@@ -313,7 +328,9 @@ start() {
 stop() {
     # Remove nftables DPI bypass
     nft delete table inet cf_dpi_bypass 2>/dev/null || true
-    logger -t cf-optimizer "DPI bypass (nftables) removed"
+    # Remove Telegram TPROXY rules
+    nft delete table inet telegram_tproxy 2>/dev/null || true
+    logger -t cf-optimizer "nftables rules removed"
 
     # Stop Xray if running
     /usr/local/bin/xray-control.sh stop 2>/dev/null || true
