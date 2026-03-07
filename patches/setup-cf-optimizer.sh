@@ -151,12 +151,19 @@ cp "$SCRIPT_DIR/luci/acl.d/luci-app-cf-optimizer.json" \
 chmod 644 /usr/share/rpcd/acl.d/luci-app-cf-optimizer.json
 echo "    acl.d/luci-app-cf-optimizer.json  -> /usr/share/rpcd/acl.d/"
 
-# JavaScript view
+# JavaScript view — Proxy Optimizer
 mkdir -p /www/luci-static/resources/view/cf-optimizer
 cp "$SCRIPT_DIR/luci/view/cf-optimizer/main.js" \
    /www/luci-static/resources/view/cf-optimizer/main.js
 chmod 644 /www/luci-static/resources/view/cf-optimizer/main.js
 echo "    view/cf-optimizer/main.js         -> /www/luci-static/resources/view/cf-optimizer/"
+
+# JavaScript view — AdGuard Home (button only, no auto-open)
+mkdir -p /www/luci-static/resources/view/adguardhome
+cp "$SCRIPT_DIR/luci/view/adguardhome/dashboard.js" \
+   /www/luci-static/resources/view/adguardhome/dashboard.js
+chmod 644 /www/luci-static/resources/view/adguardhome/dashboard.js
+echo "    view/adguardhome/dashboard.js     -> /www/luci-static/resources/view/adguardhome/"
 
 # Remove old Lua files if they exist (from previous installs)
 rm -f /usr/lib/lua/luci/controller/cf_optimizer.lua
