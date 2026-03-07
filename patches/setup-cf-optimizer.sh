@@ -1,12 +1,12 @@
 #!/bin/sh
 # setup-cf-optimizer.sh
-# Installs CF IP Optimizer on OpenWrt router (GL-iNet Flint 2 / GL-MT6000).
+# Installs Proxy Optimizer on OpenWrt router (GL-iNet Flint 2 / GL-MT6000).
 #
 # Steps:
 #   1. Copy scripts to /usr/local/bin/
 #   2. Create /etc/config/cf_optimizer (UCI)
 #   3. Deploy LuCI page (JSON menu + ACL + JS view — for OpenWrt 26.x without Lua)
-#   4. Setup cron (latency/watchdog/log-rotate/geo-update/cf-ip/sni)
+#   4. Setup cron
 #   5. Apply DPI bypass nftables rule (MSS=150)
 #   6. Create init script for autostart on boot
 #
@@ -17,7 +17,7 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "==> CF IP Optimizer: starting install"
+echo "==> Proxy Optimizer: starting install"
 echo ""
 
 # ============================================================
@@ -31,6 +31,8 @@ MIHOMO_SOCKS="127.0.0.1:7891"
 MIHOMO_CONFIG="/opt/clash/config.yaml"
 MSS_VALUE="150"
 SWITCH_THRESHOLD="20"
+XRAY_FRAGMENT_LENGTH="10-30"
+XRAY_FRAGMENT_INTERVAL="10-20"
 # --- Only needed if your proxies are behind Cloudflare CDN ---
 WORKER_URL="https://YOUR_WORKER.workers.dev"
 REGIONS="FI,DE,NL"
@@ -49,6 +51,8 @@ cp "$SCRIPT_DIR/latency-start.sh"    /usr/local/bin/latency-start.sh    && chmod
 cp "$SCRIPT_DIR/mihomo-watchdog.sh"  /usr/local/bin/mihomo-watchdog.sh  && chmod 755 /usr/local/bin/mihomo-watchdog.sh
 cp "$SCRIPT_DIR/log-rotate.sh"       /usr/local/bin/log-rotate.sh       && chmod 755 /usr/local/bin/log-rotate.sh
 cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod 755 /usr/local/bin/geo-update.sh
+cp "$SCRIPT_DIR/xray-control.sh"     /usr/local/bin/xray-control.sh     && chmod 755 /usr/local/bin/xray-control.sh
+cp "$SCRIPT_DIR/xray-install.sh"     /usr/local/bin/xray-install.sh     && chmod 755 /usr/local/bin/xray-install.sh
 cp "$SCRIPT_DIR/cf-ip-update.sh"     /usr/local/bin/cf-ip-update.sh     && chmod 755 /usr/local/bin/cf-ip-update.sh
 cp "$SCRIPT_DIR/sni-scan.sh"         /usr/local/bin/sni-scan.sh         && chmod 755 /usr/local/bin/sni-scan.sh
 
@@ -57,6 +61,8 @@ echo "    latency-start.sh    -> /usr/local/bin/"
 echo "    mihomo-watchdog.sh  -> /usr/local/bin/"
 echo "    log-rotate.sh       -> /usr/local/bin/"
 echo "    geo-update.sh       -> /usr/local/bin/"
+echo "    xray-control.sh     -> /usr/local/bin/"
+echo "    xray-install.sh     -> /usr/local/bin/"
 echo "    cf-ip-update.sh     -> /usr/local/bin/"
 echo "    sni-scan.sh         -> /usr/local/bin/"
 
@@ -80,15 +86,20 @@ uci set cf_optimizer.main.gemini_group="$GEMINI_GROUP"
 uci set cf_optimizer.main.main_group="$MAIN_GROUP"
 uci set cf_optimizer.main.switch_threshold="$SWITCH_THRESHOLD"
 
-# DPI bypass (enabled by default)
+# DPI bypass via nftables MSS (enabled by default)
 uci set cf_optimizer.main.dpi_bypass_enabled=1
 uci set cf_optimizer.main.mss_value="$MSS_VALUE"
 
 # Watchdog (enabled by default)
 uci set cf_optimizer.main.watchdog_enabled=1
 
-# Geo update (disabled by default — enable once proxy is confirmed working)
-uci set cf_optimizer.main.geo_update_enabled=0
+# Geo update (enabled by default)
+uci set cf_optimizer.main.geo_update_enabled=1
+
+# Xray Fragment DPI bypass (disabled by default — requires Xray binary + dialer-proxy in config.yaml)
+uci set cf_optimizer.main.xray_fragment_enabled=0
+uci set cf_optimizer.main.xray_fragment_length="$XRAY_FRAGMENT_LENGTH"
+uci set cf_optimizer.main.xray_fragment_interval="$XRAY_FRAGMENT_INTERVAL"
 
 # CF IP Updater and SNI Scanner (disabled by default — only for proxies behind Cloudflare CDN)
 uci set cf_optimizer.main.ip_updater_enabled=0
@@ -110,7 +121,7 @@ echo "    UCI config created."
 
 # --- 3. Deploy LuCI (JSON menu + ACL + JS view — OpenWrt 26.x style, no Lua) ---
 echo ""
-echo "==> [3/6] Installing LuCI page (Services > CF IP Optimizer)"
+echo "==> [3/6] Installing LuCI page (Services > Proxy Optimizer)"
 
 # JSON menu entry
 mkdir -p /usr/share/luci/menu.d
@@ -150,13 +161,13 @@ echo "==> [4/6] Setting up cron"
 CRON_FILE="/etc/crontabs/root"
 touch "$CRON_FILE"
 
-# Remove old entries if present (busybox sed: separate -e per pattern, no \| alternation)
-sed -i '/cf-ip-update/d' "$CRON_FILE" 2>/dev/null || true
-sed -i '/sni-scan/d'     "$CRON_FILE" 2>/dev/null || true
+# Remove old entries (busybox sed: separate -e per pattern)
+sed -i '/cf-ip-update/d'    "$CRON_FILE" 2>/dev/null || true
+sed -i '/sni-scan/d'        "$CRON_FILE" 2>/dev/null || true
 sed -i '/latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
 sed -i '/mihomo-watchdog/d' "$CRON_FILE" 2>/dev/null || true
-sed -i '/log-rotate/d'   "$CRON_FILE" 2>/dev/null || true
-sed -i '/geo-update/d'   "$CRON_FILE" 2>/dev/null || true
+sed -i '/log-rotate/d'      "$CRON_FILE" 2>/dev/null || true
+sed -i '/geo-update/d'      "$CRON_FILE" 2>/dev/null || true
 
 # Latency monitor: every 2 hours
 echo "0 */2 * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
@@ -164,7 +175,7 @@ echo "0 */2 * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/laten
 echo "*/10 * * * * /usr/local/bin/mihomo-watchdog.sh >> /var/log/mihomo-watchdog.log 2>&1" >> "$CRON_FILE"
 # Log rotation: daily at 03:00
 echo "0 3 * * * /usr/local/bin/log-rotate.sh" >> "$CRON_FILE"
-# Geo update: weekly Sunday at 04:00 (activate via LuCI when needed)
+# Geo update: weekly Sunday at 04:00
 echo "0 4 * * 0 /usr/local/bin/geo-update.sh >> /var/log/geo-update.log 2>&1" >> "$CRON_FILE"
 # CF IP update: every 6 hours (only active if ip_updater_enabled=1)
 echo "0 */6 * * * /usr/local/bin/cf-ip-update.sh >> /var/log/cf-ip-update.log 2>&1" >> "$CRON_FILE"
@@ -175,7 +186,7 @@ echo "30 2 * * * /usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1" >> "$
 echo "    latency monitor:   every 2h"
 echo "    mihomo watchdog:   every 10 min"
 echo "    log rotation:      daily 03:00"
-echo "    geo update:        weekly Sun 04:00 (activate via LuCI)"
+echo "    geo update:        weekly Sun 04:00"
 echo "    CF IP update:      every 6h (activate via LuCI)"
 echo "    SNI scan:          daily 02:30 (activate via LuCI)"
 
@@ -210,31 +221,42 @@ start() {
     [ -f /etc/cf-optimizer.status ] && \
         cp /etc/cf-optimizer.status /var/run/latency-monitor.status 2>/dev/null || true
 
-    # DPI bypass
+    # DPI bypass via nftables MSS
     local dpi_enabled
     dpi_enabled=$(uci -q get cf_optimizer.main.dpi_bypass_enabled)
     if [ "$dpi_enabled" = "1" ]; then
         nft -f /etc/nftables.d/99-cf-dpi-bypass.nft 2>/dev/null || true
-        logger -t cf-optimizer "DPI bypass rules applied"
+        logger -t cf-optimizer "DPI bypass (nftables MSS) applied"
     fi
 
-    # Latency monitor — wait for Mihomo API instead of blind sleep
-    local lat_enabled
-    lat_enabled=$(uci -q get cf_optimizer.main.latency_enabled)
-    if [ "$lat_enabled" = "1" ]; then
-        (
-            waited=0
-            while ! curl -sf --max-time 3 "${api}/version" >/dev/null 2>&1; do
-                [ $waited -ge 120 ] && break
-                sleep 5
-                waited=$((waited + 5))
-            done
+    # Wait for Mihomo API, then run latency monitor and optional Xray
+    (
+        waited=0
+        while ! curl -sf --max-time 3 "${api}/version" >/dev/null 2>&1; do
+            [ $waited -ge 120 ] && break
+            sleep 5
+            waited=$((waited + 5))
+        done
+
+        # Latency monitor
+        local lat_enabled
+        lat_enabled=$(uci -q get cf_optimizer.main.latency_enabled)
+        if [ "$lat_enabled" = "1" ]; then
             /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1
-        ) &
-        logger -t cf-optimizer "Latency monitor will run after Mihomo API ready"
-    fi
+        fi
 
-    # CF IP updater (90s delay — after latency monitor starts)
+        # Xray Fragment DPI bypass
+        local xray_enabled
+        xray_enabled=$(uci -q get cf_optimizer.main.xray_fragment_enabled)
+        if [ "$xray_enabled" = "1" ]; then
+            /usr/local/bin/xray-control.sh start
+            logger -t cf-optimizer "Xray fragment started"
+        fi
+    ) &
+
+    logger -t cf-optimizer "Startup sequence launched (waiting for Mihomo API)"
+
+    # CF IP updater (90s delay)
     local ip_enabled
     ip_enabled=$(uci -q get cf_optimizer.main.ip_updater_enabled)
     if [ "$ip_enabled" = "1" ]; then
@@ -244,8 +266,12 @@ start() {
 }
 
 stop() {
+    # Remove nftables DPI bypass
     nft delete table inet cf_dpi_bypass 2>/dev/null || true
-    logger -t cf-optimizer "DPI bypass rules removed"
+    logger -t cf-optimizer "DPI bypass (nftables) removed"
+
+    # Stop Xray if running
+    /usr/local/bin/xray-control.sh stop 2>/dev/null || true
 }
 
 restart() {
@@ -261,26 +287,30 @@ echo "    init script created and enabled (START=96)"
 # --- Done ---
 echo ""
 echo "=================================================="
-echo " CF IP Optimizer installed!"
+echo " Proxy Optimizer installed!"
 echo "=================================================="
 echo ""
-echo " LuCI: Services > CF IP Optimizer"
+echo " LuCI: Services > Proxy Optimizer"
 echo ""
 echo " Что включено по умолчанию:"
-echo "   [ON]  Latency Monitor  — переключает GEMINI каждые 2 часа (гистерезис ${SWITCH_THRESHOLD}%)"
+echo "   [ON]  Latency Monitor  — GEMINI каждые 2 часа (гистерезис ${SWITCH_THRESHOLD}%)"
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
 echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"
-echo "   [OFF] Geo Update       — обновление geoip/geosite (включить после проверки)"
-echo "   [OFF] CF IP Updater    — включить если прокси за Cloudflare CDN"
-echo "   [OFF] SNI Scanner      — включить если прокси за Cloudflare CDN"
+echo "   [ON]  Geo Update       — geoip/geosite раз в неделю"
+echo "   [OFF] Xray Fragment    — установить бинарник: /usr/local/bin/xray-install.sh"
+echo "   [OFF] CF IP Updater    — только для прокси за Cloudflare CDN"
+echo "   [OFF] SNI Scanner      — только для прокси за Cloudflare CDN"
 echo ""
 echo " Логи:"
-echo "   Latency monitor: tail -f /var/log/latency-monitor.log"
-echo "   Watchdog:        tail -f /var/log/mihomo-watchdog.log"
-echo "   Syslog:          logread | grep cf-optimizer"
+echo "   tail -f /var/log/latency-monitor.log"
+echo "   tail -f /var/log/mihomo-watchdog.log"
+echo "   logread | grep cf-optimizer"
 echo ""
-echo " Проверить GEMINI:"
+echo " Статус:"
 echo "   cat /var/run/latency-monitor.status"
-echo " Проверить watchdog:"
 echo "   cat /var/run/mihomo-watchdog.status"
+echo "   cat /var/run/xray-fragment.status"
+echo ""
+echo " Установить Xray (опционально):"
+echo "   /usr/local/bin/xray-install.sh"
 echo ""

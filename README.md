@@ -1,6 +1,6 @@
-# GL-iNet Flint 2 — SSClash + AdGuard Home + CF IP Optimizer
+# GL-iNet Flint 2 — SSClash + AdGuard Home + Proxy Optimizer
 
-Роутер **GL-iNet Flint 2 (GL-MT6000)** с OpenWrt 25.12.0, прозрачным проксированием через SSClash (Mihomo) и DNS-фильтрацией через AdGuard Home. Дополнительно — набор скриптов-оптимизаторов с управлением через LuCI.
+Роутер **GL-iNet Flint 2 (GL-MT6000)** с OpenWrt 25.12.0, прозрачным проксированием через SSClash (Mihomo) и DNS-фильтрацией через AdGuard Home. Дополнительно — Proxy Optimizer: набор скриптов стабилизации и оптимизации с единым управлением через LuCI.
 
 ---
 
@@ -42,7 +42,7 @@ Mihomo :7894  (правила из config.yaml)
 | SSClash / Mihomo | v1.19.20 | TPROXY + fake-ip DNS, порт 7894 |
 | AdGuard Home | latest | DNS-фильтрация, порт 53 / UI 3000 |
 | LuCI | 26.x | Веб-интерфейс управления |
-| CF IP Optimizer | — | Набор скриптов оптимизации (patches/) |
+| Proxy Optimizer | — | Набор скриптов оптимизации и стабилизации (patches/) |
 
 ---
 
@@ -55,7 +55,7 @@ Router/
 ├── adguardhome/
 │   └── adguardhome.yaml               # конфиг AdGuard Home
 └── patches/
-    ├── setup-cf-optimizer.sh          # главный установщик всех оптимизаторов
+    ├── setup-cf-optimizer.sh          # главный установщик Proxy Optimizer
     ├── setup-adguardhome.sh           # патч конфига AGH под Mihomo fake-ip
     │
     ├── latency-monitor.sh             # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
@@ -63,14 +63,16 @@ Router/
     ├── mihomo-watchdog.sh             # watchdog: перезапуск Mihomo при сбое
     ├── log-rotate.sh                  # ротация логов (tmpfs /var/log)
     ├── geo-update.sh                  # обновление geoip.dat / geosite.dat / country.mmdb
+    ├── xray-control.sh                # управление Xray fragment proxy (start/stop/status)
+    ├── xray-install.sh                # загрузка Xray бинарника для aarch64 с GitHub
     │
     ├── cf-ip-update.sh                # поиск лучшего CF edge IP (только для прокси за Cloudflare CDN)
     ├── sni-scan.sh                    # тест SNI через туннель Mihomo (только для прокси за Cloudflare CDN)
     ├── 99-cf-dpi-bypass.nft           # DPI bypass через nftables MSS clamp
-    ├── xray-fragment.json             # TLS fragmentation через Xray (опционально)
+    ├── xray-fragment.json             # шаблон конфига Xray fragment (генерируется из UCI при старте)
     │
     └── luci/
-        ├── menu.d/luci-app-cf-optimizer.json   # пункт меню Services
+        ├── menu.d/luci-app-cf-optimizer.json   # пункт меню "Proxy Optimizer"
         ├── acl.d/luci-app-cf-optimizer.json    # права доступа rpcd
         └── view/cf-optimizer/main.js           # JS-страница управления
 ```
@@ -79,9 +81,9 @@ Router/
 
 ---
 
-## CF IP Optimizer — что делает и как работает
+## Proxy Optimizer — что делает и как работает
 
-Набор из 6 компонентов для оптимизации и стабилизации работы Mihomo. Каждый компонент можно включить/выключить независимо через LuCI (`Services → CF IP Optimizer`).
+Набор из 7 компонентов для оптимизации и стабилизации работы Mihomo. Каждый компонент можно включить/выключить независимо через LuCI (`Services → Proxy Optimizer`).
 
 ---
 
@@ -140,7 +142,7 @@ UCI: `watchdog_enabled`
 
 ### Geo Update (`geo-update.sh`)
 
-Скачивает свежие geo-базы Mihomo и делает hot-reload конфига. Запускается раз в неделю (воскресенье 04:00). **По умолчанию выключен.**
+Скачивает свежие geo-базы Mihomo и делает hot-reload конфига. Запускается раз в неделю (воскресенье 04:00). **По умолчанию включён.**
 
 - `geoip.dat`, `geosite.dat`, `country.mmdb` из MetaCubeX latest release
 - После скачивания: `PUT /configs?force=false` — Mihomo перезагружает правила без разрыва соединений
@@ -172,6 +174,47 @@ UCI: `dpi_bypass_enabled`, `mss_value`
 
 ---
 
+### DPI Bypass — Xray Fragment (`xray-control.sh`, `xray-install.sh`)
+
+Альтернативный и дополнительный метод DPI bypass. Запускает Xray-core как локальный SOCKS5-прокси на порту 10801. Xray фрагментирует TLS ClientHello при подключении к прокси-серверу на уровне TCP-сегментов.
+
+**Отличие от nftables MSS:**
+
+| | nftables MSS | Xray Fragment |
+| -- | -- | -- |
+| Уровень | Сетевой (nftables) | Приложения (Xray) |
+| Что фрагментирует | Любые TCP SYN (mark=2) | TLS ClientHello при коннекте к прокси |
+| Настройка в config.yaml | Не нужна | `dialer-proxy: xray-fragment` на каждом прокси |
+| Нагрузка | Минимальная | Минимальная |
+
+**По умолчанию выключен.** Требует двух шагов для активации:
+
+1. Установить Xray бинарник (aarch64):
+
+   ```sh
+   /usr/local/bin/xray-install.sh
+   ```
+
+2. Добавить `dialer-proxy: xray-fragment` к прокси в `/opt/clash/config.yaml`:
+
+   ```yaml
+   proxies:
+     - name: "🇩🇪 Германия · WS"
+       type: ws
+       ...
+       dialer-proxy: xray-fragment   # ← добавить эту строку
+   ```
+
+3. Перезапустить Mihomo: `/etc/init.d/clash restart`
+
+4. Включить в LuCI: `Services → Proxy Optimizer → Xray Fragment → ON` или нажать "Запустить Xray"
+
+UCI: `xray_fragment_enabled`, `xray_fragment_length` (default `10-30`), `xray_fragment_interval` (default `10-20`)
+
+> Можно использовать совместно с nftables MSS — они не конфликтуют.
+
+---
+
 ### CF IP Updater + SNI Scanner (`cf-ip-update.sh`, `sni-scan.sh`)
 
 **Только если прокси стоят за Cloudflare CDN.** По умолчанию выключены.
@@ -188,9 +231,10 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 При старте системы:
 
 1. Восстанавливает последний статус latency monitor из `/etc/cf-optimizer.status` (flash) в `/var/run/` (RAM)
-2. Применяет DPI bypass nftables
+2. Применяет DPI bypass nftables (MSS clamp)
 3. Ждёт готовности Mihomo API (loop с таймаутом 120 сек, вместо слепого `sleep 30`)
 4. Запускает latency monitor как только API готов
+5. Запускает Xray fragment proxy (если `xray_fragment_enabled=1`)
 
 ---
 
@@ -209,8 +253,9 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 **Включить / Выключить**:
 
 - `Latency Monitor` — мониторинг + автопереключение GEMINI (каждые 2 часа)
-- `DPI Bypass` — nftables MSS clamp
+- `DPI Bypass — nftables MSS` — MSS clamp для защиты от DPI
 - `Mihomo Watchdog` — перезапуск при сбое (каждые 10 мин)
+- `Xray Fragment — DPI bypass` — Xray SOCKS5 :10801 для фрагментации TLS ClientHello
 - `Geo Update` — обновление geo-баз (раз в неделю)
 - `CF IP Updater` — поиск CF edge IP (только CDN)
 - `SNI Scanner` — тест SNI (только CDN)
@@ -219,8 +264,10 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 
 - `GEMINI группа` — точное имя selector-группы (с эмодзи)
 - `Main группа` — url-test группа (только мониторинг)
-- `Порог переключения GEMINI (%)` — гистерезис. 20 = переключать только если экономия > 20% (рекомендуется)
-- `MSS Value` — для DPI bypass
+- `Порог переключения GEMINI (%)` — гистерезис. 20 = переключать только если экономия > 20%
+- `nftables MSS Value` — для DPI bypass через MSS clamp
+- `Xray — длина фрагментов` — диапазон байт (default `10-30`)
+- `Xray — интервал мс` — задержка между фрагментами (default `10-20`)
 
 **Mihomo API** — URL, secret, SOCKS5
 
@@ -228,14 +275,14 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 
 ## Cron расписание
 
-| Задача | Расписание | Управление |
-| ------ | ---------- | ---------- |
-| Latency Monitor | каждые 2 часа | UCI `latency_enabled` |
-| Mihomo Watchdog | каждые 10 мин | UCI `watchdog_enabled` |
-| Log Rotate | ежедневно 03:00 | всегда активно |
-| Geo Update | вс 04:00 | UCI `geo_update_enabled` |
-| CF IP Update | каждые 6 часов | UCI `ip_updater_enabled` |
-| SNI Scan | ежедневно 02:30 | UCI `sni_scanner_enabled` |
+| Задача | Расписание | Управление | По умолчанию |
+| ------ | ---------- | ---------- | ------------ |
+| Latency Monitor | каждые 2 часа | UCI `latency_enabled` | ON |
+| Mihomo Watchdog | каждые 10 мин | UCI `watchdog_enabled` | ON |
+| Log Rotate | ежедневно 03:00 | всегда активно | ON |
+| Geo Update | вс 04:00 | UCI `geo_update_enabled` | ON |
+| CF IP Update | каждые 6 часов | UCI `ip_updater_enabled` | OFF |
+| SNI Scan | ежедневно 02:30 | UCI `sni_scanner_enabled` | OFF |
 
 ---
 
@@ -264,9 +311,11 @@ ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patche
 
 ### Что делает установщик
 
-1. Копирует все скрипты в `/usr/local/bin/` с правами 755
-2. Создаёт UCI-конфиг `/etc/config/cf_optimizer` (Latency + DPI + Watchdog — включены, остальное — выключено)
-3. Устанавливает LuCI-файлы (меню, ACL, JS-view)
+1. Копирует все скрипты в `/usr/local/bin/` с правами 755 (9 скриптов)
+2. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
+   - **ON**: Latency Monitor, DPI Bypass, Watchdog, Geo Update
+   - **OFF**: Xray Fragment (нужен бинарник), CF IP Updater, SNI Scanner (только CDN)
+3. Устанавливает LuCI-файлы (меню "Proxy Optimizer", ACL, JS-view)
 4. Добавляет задачи в cron (6 задач)
 5. Применяет nftables DPI bypass (MSS=150)
 6. Создаёт и включает `/etc/init.d/cf-optimizer`
@@ -283,8 +332,24 @@ cat /var/run/latency-monitor.status
 # Watchdog статус
 cat /var/run/mihomo-watchdog.status
 
+# Xray статус
+cat /var/run/xray-fragment.status
+
 # Лог
 logread | grep latency-monitor | tail -20
+```
+
+### Шаг 4 (опционально). Установить Xray Fragment
+
+```sh
+# На роутере (требует интернет через Mihomo)
+/usr/local/bin/xray-install.sh
+
+# Затем добавить в /opt/clash/config.yaml для нужных прокси:
+#   dialer-proxy: xray-fragment
+# Перезапустить Mihomo:
+/etc/init.d/clash restart
+# Включить в LuCI: Services > Proxy Optimizer > Xray Fragment > ON
 ```
 
 ---
@@ -461,8 +526,13 @@ uci set cf_optimizer.main.mss_value=150
 # Watchdog
 uci set cf_optimizer.main.watchdog_enabled=1
 
-# Geo update
-uci set cf_optimizer.main.geo_update_enabled=0  # включить после проверки
+# Geo update (включён по умолчанию)
+uci set cf_optimizer.main.geo_update_enabled=1
+
+# Xray fragment (выключен по умолчанию — нужен бинарник)
+uci set cf_optimizer.main.xray_fragment_enabled=0
+uci set cf_optimizer.main.xray_fragment_length='10-30'
+uci set cf_optimizer.main.xray_fragment_interval='10-20'
 
 # Mihomo API
 uci set cf_optimizer.main.mihomo_api='http://127.0.0.1:9090'
@@ -509,14 +579,19 @@ proxy-groups:
 # Статус
 cat /var/run/latency-monitor.status
 cat /var/run/mihomo-watchdog.status
+cat /var/run/xray-fragment.status
 
 # Запустить вручную
 /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1 &
 /usr/local/bin/mihomo-watchdog.sh >> /var/log/mihomo-watchdog.log 2>&1
+/usr/local/bin/xray-control.sh start
+/usr/local/bin/xray-control.sh stop
+/usr/local/bin/xray-control.sh status
 
 # Логи
 logread | grep latency-monitor | tail -20
 logread | grep mihomo-watchdog | tail -10
+logread | grep xray-fragment | tail -10
 tail -f /var/log/latency-monitor.log
 
 # Mihomo API

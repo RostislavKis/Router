@@ -1,6 +1,6 @@
 {
 	"admin/services/cf-optimizer": {
-		"title": "CF IP Optimizer",
+		"title": "Proxy Optimizer",
 		"order": 25,
 		"action": {
 			"type": "alias",
