@@ -41,6 +41,8 @@ MIHOMO_API="${MIHOMO_API:-http://127.0.0.1:9090}"
 GEMINI_GROUP="${GEMINI_GROUP:-🤖 GEMINI}"
 MAIN_GROUP="${MAIN_GROUP:-PrvtVPN All Auto}"
 SWITCH_THRESHOLD="${SWITCH_THRESHOLD:-20}"
+MIHOMO_SOCKS=$(uci -q get cf_optimizer.main.mihomo_socks)
+MIHOMO_SOCKS="${MIHOMO_SOCKS:-}"
 
 # --- Lock ---
 if [ -f "$LOCK_FILE" ]; then
@@ -188,6 +190,28 @@ switch_group() {
 }
 
 # ================================================================
+# Test Gemini API accessibility through the currently active SOCKS5 proxy.
+# Call AFTER switch_group + sleep 2 to let Mihomo update routing.
+#
+# Logic: GET /v1beta/models?key=placeholder
+#   - IP accessible → Google returns 400/401 (bad key, but reachable)
+#   - IP geo-blocked → Google returns body with "location is not supported"
+#   - Timeout / no response → proxy down
+#
+# Returns: 0 = Gemini accessible, 1 = geo-blocked or unreachable
+# ================================================================
+gemini_access_ok() {
+    local response
+    response=$(curl -sf --max-time 8 \
+        --socks5-hostname "$MIHOMO_SOCKS" \
+        "https://generativelanguage.googleapis.com/v1beta/models?key=placeholder" \
+        2>/dev/null)
+    [ -z "$response" ] && return 1
+    echo "$response" | grep -qi "location is not supported\|User location" && return 1
+    return 0
+}
+
+# ================================================================
 # BLOCK A: GEMINI group — test & switch with hysteresis
 # ================================================================
 # Hysteresis prevents unnecessary proxy switches for Gemini/NotebookLM.
@@ -198,7 +222,6 @@ switch_group() {
 optimize_gemini() {
     logger -t "$LOG_TAG" "=== GEMINI group: ${GEMINI_GROUP} (threshold=${SWITCH_THRESHOLD}%) ==="
 
-    # Get proxy list from Mihomo API (not hardcoded)
     local proxies
     proxies=$(get_group_proxies "$GEMINI_GROUP")
 
@@ -208,52 +231,100 @@ optimize_gemini() {
         return 1
     fi
 
-    # Read current active proxy before testing
     local current_proxy
     current_proxy=$(get_group_current "$GEMINI_GROUP")
     logger -t "$LOG_TAG" "GEMINI: current='${current_proxy:-none}'"
 
     local proxy_count
     proxy_count=$(echo "$proxies" | wc -l)
-    logger -t "$LOG_TAG" "GEMINI: testing ${proxy_count} proxies"
+    logger -t "$LOG_TAG" "GEMINI: phase 1 — latency test (${proxy_count} proxies)"
 
-    local best_proxy=""
-    local best_delay=9999
+    # ── Phase 1: latency test via Mihomo delay API (non-switching, fast) ──────
+    # Candidates stored as "NNNNN|proxy_name" for sort-by-latency
+    local tmp_cand
+    tmp_cand=$(mktemp 2>/dev/null || echo "/tmp/gemini-cand-$$")
+    : > "$tmp_cand"
     local current_delay=9999
     local tested=0
 
     while IFS= read -r proxy; do
         [ -z "$proxy" ] && continue
-
         local delay
         delay=$(get_proxy_delay "$proxy" 5000)
         tested=$((tested + 1))
-
-        logger -t "$LOG_TAG" "  [GEMINI] $(printf '%-50s' "$proxy") ${delay}ms"
-
-        # Track current proxy delay separately
+        logger -t "$LOG_TAG" "  [latency] $(printf '%-50s' "$proxy") ${delay}ms"
         [ "$proxy" = "$current_proxy" ] && current_delay=$delay
-
-        if [ "$delay" -lt "$best_delay" ] 2>/dev/null; then
-            best_delay=$delay
-            best_proxy=$proxy
-        fi
-
+        [ "$delay" -lt 9000 ] 2>/dev/null && printf '%05d|%s\n' "$delay" "$proxy" >> "$tmp_cand"
         sleep 1
     done << PROXYEOF
 $proxies
 PROXYEOF
 
-    logger -t "$LOG_TAG" "GEMINI: tested=${tested}, best='${best_proxy}'(${best_delay}ms), current='${current_proxy}'(${current_delay}ms)"
+    logger -t "$LOG_TAG" "GEMINI: tested=${tested}, current_delay=${current_delay}ms"
 
-    if [ -z "$best_proxy" ] || [ "$best_delay" -ge 9000 ] 2>/dev/null; then
+    if [ ! -s "$tmp_cand" ]; then
+        rm -f "$tmp_cand"
         logger -t "$LOG_TAG" "GEMINI: no reachable proxy found (all timed out)"
         echo "GEMINI_STATUS=all_timeout" >> "$STATUS_FILE"
         return
     fi
 
+    local sorted_cand
+    sorted_cand=$(sort "$tmp_cand")
+    rm -f "$tmp_cand"
+
+    # ── Phase 2: Gemini geo-block validation (requires SOCKS5) ────────────────
+    # Temporarily switch to each candidate (fastest first) and probe Gemini API.
+    # Google returns body "location is not supported" for geo-blocked IPs.
+    # First accessible candidate wins — loop breaks immediately.
+    local best_proxy=""
+    local best_delay=9999
+
+    if [ -n "$MIHOMO_SOCKS" ]; then
+        logger -t "$LOG_TAG" "GEMINI: phase 2 — Gemini access validation via ${MIHOMO_SOCKS}"
+        local validated=0
+        while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            local d px
+            d=$(echo "$line" | cut -d'|' -f1 | awk '{print $1+0}')
+            px=$(echo "$line" | cut -d'|' -f2-)
+            [ -z "$px" ] && continue
+            switch_group "$GEMINI_GROUP" "$px"
+            sleep 2
+            if gemini_access_ok; then
+                logger -t "$LOG_TAG" "  [gemini-ok]      '${px}' (${d}ms)"
+                best_proxy="$px"
+                best_delay=$d
+                validated=1
+                break
+            else
+                logger -t "$LOG_TAG" "  [gemini-blocked] '${px}' — IP geo-blocked"
+            fi
+        done << CEOF
+$sorted_cand
+CEOF
+        if [ "$validated" = "0" ]; then
+            logger -t "$LOG_TAG" "GEMINI: WARNING — all candidates geo-blocked! Falling back to fastest by latency"
+        fi
+    fi
+
+    # Fallback: SOCKS5 not configured or all blocked → use fastest by latency
+    if [ -z "$best_proxy" ]; then
+        local first_line
+        first_line=$(echo "$sorted_cand" | head -1)
+        best_delay=$(echo "$first_line" | cut -d'|' -f1 | awk '{print $1+0}')
+        best_proxy=$(echo "$first_line" | cut -d'|' -f2-)
+    fi
+
+    logger -t "$LOG_TAG" "GEMINI: best='${best_proxy}'(${best_delay}ms), current='${current_proxy}'(${current_delay}ms)"
+
+    if [ -z "$best_proxy" ] || [ "$best_delay" -ge 9000 ] 2>/dev/null; then
+        logger -t "$LOG_TAG" "GEMINI: no valid proxy"
+        echo "GEMINI_STATUS=all_timeout" >> "$STATUS_FILE"
+        return
+    fi
+
     if [ "$best_proxy" = "$current_proxy" ]; then
-        # Already on the best proxy — no switch needed
         logger -t "$LOG_TAG" "GEMINI: already optimal, keeping '${best_proxy}' (${best_delay}ms)"
         {
             echo "GEMINI_PROXY=${best_proxy}"
@@ -263,22 +334,21 @@ PROXYEOF
         return
     fi
 
-    # Hysteresis check: only switch if best is faster by >= SWITCH_THRESHOLD%
-    # threshold_delay = current_delay * (100 - threshold) / 100
+    # ── Hysteresis check ──────────────────────────────────────────────────────
     local threshold_delay
     if [ "$current_delay" -lt 9000 ] 2>/dev/null; then
         threshold_delay=$(awk "BEGIN { printf \"%d\", $current_delay * (100 - $SWITCH_THRESHOLD) / 100 }")
         logger -t "$LOG_TAG" "GEMINI: switch threshold = ${threshold_delay}ms (${SWITCH_THRESHOLD}% below ${current_delay}ms)"
     else
-        # Current proxy is unreachable — always switch to best
         threshold_delay=9999
         logger -t "$LOG_TAG" "GEMINI: current proxy unreachable, switching unconditionally"
     fi
 
     if [ "$best_delay" -lt "$threshold_delay" ] 2>/dev/null; then
-        local saved=$((current_delay - best_delay))
+        # Confirm switch (may already be set from validation phase — idempotent)
         local api_result
         api_result=$(switch_group "$GEMINI_GROUP" "$best_proxy")
+        local saved=$((current_delay - best_delay))
         logger -t "$LOG_TAG" "GEMINI: switched '${current_proxy}'→'${best_proxy}' (-${saved}ms) [API: ${api_result}]"
         {
             echo "GEMINI_PROXY=${best_proxy}"
@@ -286,10 +356,10 @@ PROXYEOF
             echo "GEMINI_STATUS=ok"
             echo "GEMINI_SWITCHED=1"
         } >> "$STATUS_FILE"
-        # Persist to flash only on actual switch
         cp "$STATUS_FILE" "$PERSISTENT_STATUS" 2>/dev/null || true
     else
-        # Improvement below threshold — keep current proxy
+        # Improvement below threshold — restore current proxy
+        switch_group "$GEMINI_GROUP" "$current_proxy"
         logger -t "$LOG_TAG" "GEMINI: keeping '${current_proxy}' (${current_delay}ms) — '${best_proxy}' (${best_delay}ms) not ${SWITCH_THRESHOLD}%+ better"
         {
             echo "GEMINI_PROXY=${current_proxy:-${best_proxy}}"
