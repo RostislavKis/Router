@@ -98,11 +98,19 @@ else
 		"title": "AdGuard Home",
 		"order": 15,
 		"action": {
-			"type": "view",
-			"path": "adguardhome/dashboard"
+			"type": "alias",
+			"path": "admin/services/adguardhome/dashboard"
 		},
 		"depends": {
 			"acl": [ "luci-app-adguardhome" ]
+		}
+	},
+	"admin/services/adguardhome/dashboard": {
+		"title": "→ Open Dashboard",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "adguardhome/dashboard"
 		}
 	}
 }
