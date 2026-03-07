@@ -173,11 +173,12 @@ table inet cf_dpi_bypass {
 
 `Services → CF IP Optimizer` — единая панель управления всеми оптимизаторами.
 
+> Реализован на современном LuCI (OpenWrt 26.x) без Lua — JSON-меню + JS view.
+> Файлы: `menu.d/`, `acl.d/`, `view/cf-optimizer/main.js`.
+
 ### Секции
 
-**Статус** — текущий CF edge IP, задержка, SNI, статус DPI bypass, кнопки ручного запуска
-
-**Latency Monitor** — текущий прокси GEMINI + задержка, текущий прокси основной группы, кнопка "Запустить сейчас"
+**Latency Monitor — статус** — текущий прокси GEMINI + задержка, текущий прокси Main группы, кнопка "Запустить сейчас"
 
 **Включить / Выключить** — флаги для каждого блока:
 
@@ -186,19 +187,16 @@ table inet cf_dpi_bypass {
 - `CF IP Updater` — включить поиск CF edge IP (только для прокси за CDN)
 - `SNI Scanner` — включить тест SNI (только для прокси за CDN)
 
-**Настройки** — параметры всех блоков:
+**Настройки прокси-групп** — параметры оптимизаторов:
 
 - `GEMINI группа` — точное имя selector-группы в Mihomo (по умолчанию: `🤖 GEMINI`)
 - `Main группа` — имя url-test группы для мониторинга (по умолчанию: `PrvtVPN All Auto`)
-- `Worker API URL` — URL твоего Cloudflare Worker (для блоков 1–2)
-- `Регионы` — коды стран через запятую (FI,DE,NL,SE)
-- `Имя прокси в Mihomo` — для блока 1 (CF IP updater)
 - `MSS Value` — для DPI bypass (150 рекомендуется)
+- `CF Worker API URL` — URL твоего Cloudflare Worker (для блоков 1–2)
+- `Регионы` — коды стран через запятую (FI,DE,NL,SE)
 - `Порог обновления (%)` — обновлять IP только если новый быстрее на X%
 
-**Mihomo API** — URL, secret, SOCKS5 адрес, путь к config.yaml
-
-**Последний лог** — последние строки лога IP updater прямо в интерфейсе
+**Mihomo API** — URL, secret, SOCKS5 адрес
 
 ---
 
@@ -216,14 +214,19 @@ ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patche
 
 ### Что делает установщик (`setup-cf-optimizer.sh`)
 
-1. Копирует скрипты в `/usr/local/bin/` с правами 755
+1. Копирует скрипты в `/usr/local/bin/` с правами 755:
+   `latency-monitor.sh`, `latency-start.sh`, `cf-ip-update.sh`, `sni-scan.sh`
 2. Создаёт UCI-конфиг `/etc/config/cf_optimizer` с дефолтными значениями
-3. Устанавливает LuCI-файлы в `/usr/lib/lua/luci/`
+   (Latency Monitor и DPI Bypass — **включены**, CF IP Updater и SNI Scanner — **выключены**)
+3. Устанавливает LuCI-файлы (формат OpenWrt 26.x — без Lua):
+   - `/usr/share/luci/menu.d/luci-app-cf-optimizer.json` — пункт меню
+   - `/usr/share/rpcd/acl.d/luci-app-cf-optimizer.json` — права доступа
+   - `/www/luci-static/resources/view/cf-optimizer/main.js` — страница интерфейса
 4. Добавляет задачи в cron:
+   - Latency monitor: каждые 2 часа
    - CF IP update: каждые 6 часов
    - SNI scan: ежедневно в 02:30
-   - Latency monitor: каждые 2 часа
-5. Применяет nftables DPI bypass правило
+5. Применяет nftables DPI bypass правило (MSS=150)
 6. Создаёт init-скрипт `/etc/init.d/cf-optimizer` (запуск при старте системы)
 
 ### Шаг 2. Настройка через LuCI
