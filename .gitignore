@@ -13,3 +13,7 @@ log.txt
 
 # IDE / Claude
 .claude/
+
+# Черновики постов
+TELEGRAM_POST.md
+FORUM_4PDA_POST.txt
