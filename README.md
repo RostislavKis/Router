@@ -65,6 +65,7 @@ Router/
     ├── geo-update.sh                  # обновление geoip.dat / geosite.dat / country.mmdb
     ├── xray-control.sh                # управление Xray fragment proxy (start/stop/status)
     ├── xray-install.sh                # загрузка Xray бинарника для aarch64 с GitHub
+    ├── 99-router-mem.conf             # sysctl: оптимизация RAM для embedded/flash системы
     │
     ├── cf-ip-update.sh                # поиск лучшего CF edge IP (только для прокси за Cloudflare CDN)
     ├── sni-scan.sh                    # тест SNI через туннель Mihomo (только для прокси за Cloudflare CDN)
@@ -137,6 +138,28 @@ UCI: `watchdog_enabled`
 `/var/log` на OpenWrt — tmpfs (RAM). Стандартного logrotate нет. Без чистки логи могут съесть RAM за несколько дней.
 
 Файлы: `latency-monitor.log`, `cf-ip-update.log`, `sni-scan.log`, `mihomo-watchdog.log`
+
+---
+
+### RAM Optimization (`99-router-mem.conf`)
+
+Файл sysctl-настроек для embedded/flash системы с 1 GB RAM и тремя Go-процессами (Mihomo, AdGuard Home, Xray). Разворачивается в `/etc/sysctl.d/99-router-mem.conf` и применяется автоматически при загрузке через `S11sysctl`.
+
+| Параметр | Значение | По умолчанию | Причина |
+| -------- | -------- | ------------ | ------- |
+| `vm.dirty_ratio` | 5 | 20 | Сбрасывать грязные страницы на флеш быстрее — меньше риск потери данных при отключении питания |
+| `vm.dirty_background_ratio` | 2 | 10 | Фоновая запись начинается раньше, меньше пиковая нагрузка |
+| `vm.vfs_cache_pressure` | 200 | 100 | Ядро активнее освобождает page/dentry/inode кеш — больше RAM для процессов |
+| `vm.min_free_kbytes` | 16384 | авто | Всегда держать 16 MB свободными, защита от OOM-спайков Go runtime |
+
+**Реальный эффект на GL-MT6000 (1 GB):**
+
+```text
+До:   MemFree ~340 MB   MemAvailable ~579 MB
+После: MemFree ~553 MB   MemAvailable ~602 MB
+```
+
+Основная причина прироста — `drop_caches` при установке и более агрессивный `vfs_cache_pressure` в дальнейшем. Процессы (Clash ~100 MB, AGH ~90 MB, Xray ~30 MB) в сумме занимают ~230 MB физической памяти — остаток свободен.
 
 ---
 

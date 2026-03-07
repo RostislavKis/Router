@@ -72,6 +72,12 @@ cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/nftables.d/99-cf-dpi-bypass.nft
 chmod 644 /etc/nftables.d/99-cf-dpi-bypass.nft
 echo "    99-cf-dpi-bypass.nft -> /etc/nftables.d/"
 
+mkdir -p /etc/sysctl.d
+cp "$SCRIPT_DIR/99-router-mem.conf" /etc/sysctl.d/99-router-mem.conf
+chmod 644 /etc/sysctl.d/99-router-mem.conf
+sysctl -e -p /etc/sysctl.d/99-router-mem.conf >/dev/null 2>&1 || true
+echo "    99-router-mem.conf  -> /etc/sysctl.d/ (applied)"
+
 # --- 2. Create UCI config ---
 echo ""
 echo "==> [2/6] Creating /etc/config/cf_optimizer (UCI)"
