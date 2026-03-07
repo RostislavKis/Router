@@ -232,19 +232,23 @@ ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patche
 ### Шаг 2. Настройка через LuCI
 
 `Services → CF IP Optimizer`:
-1. Вписать имя GEMINI-группы (точно как в Mihomo `config.yaml`)
-2. Вписать имя основной группы
-3. Включить `Latency Monitor`
-4. Если прокси за Cloudflare CDN — заполнить Worker URL, регионы, имя прокси, включить IP Updater
-5. Нажать `Save & Apply`
+
+После установки **по умолчанию уже включены**: Latency Monitor и DPI Bypass.
+
+Что проверить / изменить:
+
+1. Убедиться что имя GEMINI-группы совпадает с `config.yaml` (дефолт: `🤖 GEMINI`)
+2. Убедиться что имя Main-группы совпадает с `config.yaml` (дефолт: `PrvtVPN All Auto`)
+3. Если прокси за Cloudflare CDN — заполнить Worker URL, регионы, включить IP Updater
+4. Нажать `Save & Apply`
 
 ### Шаг 3. Проверка
 
 ```sh
-# Запустить latency monitor вручную
-/usr/local/bin/latency-monitor.sh
+# Запустить latency monitor вручную (первый прогон)
+/usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1 &
 
-# Посмотреть результат
+# Посмотреть результат (~1 мин)
 cat /var/run/latency-monitor.status
 
 # Лог

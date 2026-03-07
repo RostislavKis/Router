@@ -136,8 +136,8 @@ echo "==> [4/6] Setting up cron"
 CRON_FILE="/etc/crontabs/root"
 touch "$CRON_FILE"
 
-# Remove old entries if present
-sed -i '/cf-ip-update\|sni-scan\|latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
+# Remove old entries if present (busybox sed: separate -e per pattern, no \| alternation)
+sed -i '/cf-ip-update/d; /sni-scan/d; /latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
 
 # Latency monitor: every 2 hours
 echo "0 */2 * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
