@@ -28,6 +28,13 @@ function index()
         nil
     ).leaf = true
 
+    -- Действие: запустить latency monitor вручную
+    entry(
+        {"admin", "services", "cf_optimizer", "run_latency"},
+        call("action_run_latency"),
+        nil
+    ).leaf = true
+
     -- Действие: переключить DPI bypass
     entry(
         {"admin", "services", "cf_optimizer", "toggle_dpi"},
@@ -45,6 +52,12 @@ end
 -- Запустить SNI-сканирование (фоновый процесс)
 function action_run_sni_scan()
     luci.sys.exec("/usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1 &")
+    luci.http.redirect(luci.dispatcher.build_url("admin/services/cf_optimizer"))
+end
+
+-- Запустить latency monitor (фоновый процесс)
+function action_run_latency()
+    luci.sys.exec("/usr/local/bin/latency-monitor.sh >> /var/log/latency-monitor.log 2>&1 &")
     luci.http.redirect(luci.dispatcher.build_url("admin/services/cf_optimizer"))
 end
 

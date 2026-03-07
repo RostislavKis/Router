@@ -5,8 +5,8 @@ local sys = require "luci.sys"
 local fs  = require "nixio.fs"
 
 -- Читаем файл статуса
-local function read_status()
-    local f = fs.open("/var/run/cf-optimizer.status", "r")
+local function read_status(path)
+    local f = fs.open(path or "/var/run/cf-optimizer.status", "r")
     if not f then return nil end
     local data = {}
     for line in f:lines() do
@@ -30,7 +30,8 @@ local function dpi_active()
     return tonumber(r) and tonumber(r) > 0
 end
 
-local status = read_status()
+local status   = read_status("/var/run/cf-optimizer.status")
+local lat_stat = read_status("/var/run/latency-monitor.status")
 
 -- ============================================================
 -- Основная карта
@@ -92,23 +93,76 @@ dv_btns.cfgvalue = function()
 end
 
 -- ============================================================
+-- Секция: Latency Monitor (прокси-группы)
+-- ============================================================
+local s_lat = m:section(NamedSection, "main", "cf_optimizer", translate("Latency Monitor"))
+s_lat.addremove = false
+s_lat.anonymous = true
+
+local function lat_val(key, default)
+    return (lat_stat and lat_stat[key]) and lat_stat[key] or (default or "—")
+end
+
+local dv_lat_run = s_lat:option(DummyValue, "_lat_run", translate("Последний запуск"))
+dv_lat_run.cfgvalue = function() return lat_val("LAST_RUN") end
+
+local dv_gem = s_lat:option(DummyValue, "_gem", translate("GEMINI (текущий)"))
+dv_gem.rawhtml = true
+dv_gem.cfgvalue = function()
+    local proxy  = lat_val("GEMINI_PROXY")
+    local delay  = lat_val("GEMINI_DELAY")
+    local st     = lat_val("GEMINI_STATUS")
+    if proxy == "—" then
+        return "<em style='color:#aaa'>Ещё не запускался</em>"
+    end
+    local color = (st == "ok") and "#4caf50" or "#f44336"
+    return string.format("<strong>%s</strong> &nbsp; <span style='color:%s'>%s</span>",
+        luci.util.pcdata(proxy), color, luci.util.pcdata(delay))
+end
+
+local dv_main_lat = s_lat:option(DummyValue, "_main_lat", translate("PrvtVPN Auto (текущий)"))
+dv_main_lat.rawhtml = true
+dv_main_lat.cfgvalue = function()
+    local proxy = lat_val("MAIN_PROXY")
+    local delay = lat_val("MAIN_DELAY")
+    if proxy == "—" then
+        return "<em style='color:#aaa'>—</em>"
+    end
+    return string.format("%s &nbsp; <span style='color:#4caf50'>%s</span>",
+        luci.util.pcdata(proxy), luci.util.pcdata(delay))
+end
+
+local dv_lat_btn = s_lat:option(DummyValue, "_lat_btn", translate("Действие"))
+dv_lat_btn.rawhtml = true
+dv_lat_btn.cfgvalue = function()
+    local base = luci.dispatcher.build_url("admin/services/cf_optimizer")
+    return string.format(
+        '<a class="btn cbi-button cbi-button-apply" href="%s/run_latency">&#9654; Запустить сейчас</a>',
+        base)
+end
+
+-- ============================================================
 -- Секция: Включение блоков
 -- ============================================================
 local s_enable = m:section(NamedSection, "main", "cf_optimizer", translate("Включить / Выключить"))
 s_enable.addremove = false
 s_enable.anonymous = true
 
-s_enable:option(Flag, "ip_updater_enabled",
-    translate("IP Updater"),
-    translate("Автоматически находить лучший CF edge IP каждые 6 часов"))
-
-s_enable:option(Flag, "sni_scanner_enabled",
-    translate("SNI Scanner"),
-    translate("Тестировать SNI через реальный туннель Mihomo (раз в сутки)"))
+s_enable:option(Flag, "latency_enabled",
+    translate("Latency Monitor"),
+    translate("Тестировать прокси через Mihomo API и переключать GEMINI на лучший (каждые 2 часа)"))
 
 s_enable:option(Flag, "dpi_bypass_enabled",
     translate("DPI Bypass (nftables MSS)"),
     translate("Разбивать TLS ClientHello на части — DPI не видит SNI целиком. Только трафик Mihomo (mark=2)"))
+
+s_enable:option(Flag, "ip_updater_enabled",
+    translate("CF IP Updater"),
+    translate("Автоматически находить лучший CF edge IP (только если прокси за Cloudflare CDN)"))
+
+s_enable:option(Flag, "sni_scanner_enabled",
+    translate("SNI Scanner"),
+    translate("Тестировать SNI через реальный туннель Mihomo (только если прокси за Cloudflare CDN)"))
 
 -- ============================================================
 -- Секция: Настройки
@@ -116,6 +170,14 @@ s_enable:option(Flag, "dpi_bypass_enabled",
 local s_cfg = m:section(NamedSection, "main", "cf_optimizer", translate("Настройки"))
 s_cfg.addremove = false
 s_cfg.anonymous = true
+
+local gem_grp = s_cfg:option(Value, "gemini_group", translate("GEMINI группа (имя в Mihomo)"))
+gem_grp.placeholder = "🤖 GEMINI"
+gem_grp.description = translate("Точное имя select-группы для Gemini. Latency Monitor переключает её автоматически.")
+
+local main_grp = s_cfg:option(Value, "main_group", translate("Main группа (имя в Mihomo)"))
+main_grp.placeholder = "PrvtVPN All Auto"
+main_grp.description = translate("url-test группа — Mihomo управляет сам, мониторинг только читает.")
 
 local wurl = s_cfg:option(Value, "worker_url", translate("Worker API URL"))
 wurl.placeholder = "https://YOUR_WORKER.workers.dev"
