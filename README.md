@@ -53,7 +53,7 @@ Router/
 ├── README.md                          # этот файл
 ├── config.example.yaml                # шаблон конфига Mihomo (плейсхолдеры)
 ├── adguardhome/
-│   └── adguardhome.yaml               # конфиг AdGuard Home
+│   └── config.yaml                    # конфиг AdGuard Home
 └── patches/
     ├── setup-cf-optimizer.sh          # главный установщик Proxy Optimizer
     ├── setup-adguardhome.sh           # патч конфига AGH под Mihomo fake-ip
@@ -246,15 +246,11 @@ UCI: `dpi_bypass_enabled`, `mss_value`
 | Настройка в config.yaml | Не нужна | `dialer-proxy: xray-fragment` на каждом прокси |
 | Нагрузка | Минимальная | Минимальная |
 
-**По умолчанию выключен.** Требует двух шагов для активации:
+**Бинарник устанавливается автоматически** при запуске `setup-cf-optimizer.sh`. Если установка не удалась (нет интернета), можно запустить вручную: `/usr/local/bin/xray-install.sh`.
 
-1. Установить Xray бинарник (aarch64):
+**По умолчанию выключен.** Для активации достаточно двух шагов:
 
-   ```sh
-   /usr/local/bin/xray-install.sh
-   ```
-
-2. Добавить `dialer-proxy: xray-fragment` к прокси в `/opt/clash/config.yaml`:
+1. Добавить `dialer-proxy: xray-fragment` к нужным прокси в `/opt/clash/config.yaml`:
 
    ```yaml
    proxies:
@@ -264,9 +260,9 @@ UCI: `dpi_bypass_enabled`, `mss_value`
        dialer-proxy: xray-fragment   # ← добавить эту строку
    ```
 
-3. Перезапустить Mihomo: `/etc/init.d/clash restart`
+   Или использовать кнопку **[+] Применить ко всем прокси** в LuCI — она добавит `dialer-proxy` автоматически и перезагрузит Mihomo.
 
-4. Включить в LuCI: `Services → Proxy Optimizer → Xray Fragment → ON` или нажать "Запустить Xray"
+2. Включить в LuCI: `Services → Proxy Optimizer → Settings → Xray Fragment → ON` или нажать "Запустить Xray" на Overview
 
 UCI: `xray_fragment_enabled`, `xray_fragment_length` (default `10-30`), `xray_fragment_interval` (default `10-20`)
 
@@ -448,17 +444,14 @@ cat /var/run/xray-fragment.status
 logread | grep latency-monitor | tail -20
 ```
 
-### Шаг 4 (опционально). Установить Xray Fragment
+### Шаг 4 (опционально). Активировать Xray Fragment
+
+Xray-core устанавливается автоматически установщиком. Для активации:
 
 ```sh
-# На роутере (требует интернет через Mihomo)
-/usr/local/bin/xray-install.sh
-
-# Затем добавить в /opt/clash/config.yaml для нужных прокси:
-#   dialer-proxy: xray-fragment
-# Перезапустить Mihomo:
-/etc/init.d/clash restart
-# Включить в LuCI: Services > Proxy Optimizer > Xray Fragment > ON
+# Добавить dialer-proxy к нужным прокси в config.yaml вручную,
+# или нажать "[+] Применить ко всем прокси" в LuCI (Overview → Xray Fragment).
+# Включить в LuCI: Services → Proxy Optimizer → Settings → Xray Fragment → ON
 ```
 
 ---
@@ -729,7 +722,7 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 | `apk update` — "unexpected end of file" | `wget` → `wget-nossl` (без HTTPS) | `ln -sf /bin/uclient-fetch /usr/bin/wget` |
 | `Error: Could not process rule: No such file or directory` | `kmod-nft-tproxy` не установлен | `apk add kmod-nft-tproxy` |
 | `ERROR: Neither nftables nor iptables found` | `iptables` не установлен | `apk add iptables-nft` |
-| DNS SERVFAIL для всех доменов | AGH не может достучаться до Mihomo DNS | `aaaa_disabled: true` в adguardhome.yaml |
+| DNS SERVFAIL для всех доменов | AGH не может достучаться до Mihomo DNS | `aaaa_disabled: true` в `adguardhome/config.yaml` |
 | Домены `.ru` не резолвятся | Цикл: `direct-nameserver: system` → AGH → Clash | Убрать `system`, использовать `1.1.1.1` |
 | GEMINI переключается слишком часто | `switch_threshold` = 0 | Установить 20: `uci set cf_optimizer.main.switch_threshold=20` |
 | GEMINI не переключается | Имя группы в UCI не совпадает с Mihomo | Проверить: `uci get cf_optimizer.main.gemini_group` |
