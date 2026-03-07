@@ -59,7 +59,7 @@ Router/
     ├── setup-adguardhome.sh           # патч конфига AGH под Mihomo fake-ip
     │
     ├── latency-monitor.sh             # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
-    ├── latency-start.sh               # враппер для запуска из LuCI (фон)
+    ├── latency-start.sh               # пишет trigger-файл для LuCI-кнопки (cron подхватывает за ≤1 мин)
     ├── mihomo-watchdog.sh             # watchdog: перезапуск Mihomo при сбое
     ├── log-rotate.sh                  # ротация логов (tmpfs /var/log)
     ├── geo-update.sh                  # обновление geoip.dat / geosite.dat / country.mmdb
@@ -77,7 +77,8 @@ Router/
         ├── menu.d/luci-app-cf-optimizer.json   # пункт меню "Proxy Optimizer"
         ├── menu.d/luci-app-adguardhome.json    # замена меню AGH (одна кнопка "Open Dashboard")
         ├── acl.d/luci-app-cf-optimizer.json    # права доступа rpcd
-        ├── view/cf-optimizer/main.js           # JS-страница управления
+        ├── view/cf-optimizer/main.js           # Overview: статус мониторов, кнопки управления, live log
+        ├── view/cf-optimizer/settings.js       # Settings: UCI-настройки прокси-групп, порогов, API
         └── view/adguardhome/dashboard.js       # кастомная страница AGH (кнопка, без авто-открытия)
 ```
 
@@ -298,15 +299,23 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 
 ## LuCI-интерфейс
 
-`Services → CF IP Optimizer` — единая панель управления.
+`Services → Proxy Optimizer` — единая панель управления. Две вкладки: **Overview** и **Settings**.
 
 > Реализован на LuCI без Lua (OpenWrt 25.12 + LuCI 26.064) — JSON-меню + JS view.
 
-### Секции
+### Overview
 
-**Latency Monitor — статус** — текущий прокси GEMINI + задержка, текущий Main прокси, кнопка запуска
+**Latency Monitor — статус** — текущий прокси GEMINI + задержка, текущий Main прокси, кнопка "Запустить мониторинг сейчас"
+
+> Кнопка пишет trigger-файл `/var/run/latency-trigger`. Cron проверяет его каждую минуту и запускает `latency-monitor.sh` вне rpcd (решение проблемы таймаута XHR). Страница опрашивает статус каждые 3 сек и перезагружается автоматически по завершении.
 
 **Mihomo Watchdog — статус** — последняя проверка, состояние (healthy / warning / restarting / recovered / failed), счётчик сбоев
+
+**Xray Fragment** — кнопки Запустить / Остановить, применить / удалить `dialer-proxy` из config.yaml
+
+**Latency Monitor — статус файл (live)** — автообновляемый лог последнего запуска (poll каждые 5 сек)
+
+### Settings
 
 **Включить / Выключить**:
 
@@ -336,6 +345,7 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 | Задача | Расписание | Управление | По умолчанию |
 | ------ | ---------- | ---------- | ------------ |
 | Latency Monitor | каждые 2 часа | UCI `latency_enabled` | ON |
+| Latency trigger (LuCI-кнопка) | каждую минуту | автоматически | ON |
 | Mihomo Watchdog | каждые 10 мин | UCI `watchdog_enabled` | ON |
 | Log Rotate | ежедневно 03:00 | всегда активно | ON |
 | Geo Update | вс 04:00 | UCI `geo_update_enabled` | ON |
@@ -725,6 +735,8 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 | GEMINI не переключается | Имя группы в UCI не совпадает с Mihomo | Проверить: `uci get cf_optimizer.main.gemini_group` |
 | Watchdog постоянно перезапускает | Mihomo API меняет порт или secret | Проверить `cf_optimizer.main.mihomo_api` и `mihomo_secret` |
 | Lock file завис после сбоя | Скрипт убит без trap (SIGKILL) | `rm -f /var/run/latency-monitor.lock` |
+| AGH не скачивает фильтры (таймаут `198.18.x.x`) | `github.io` / `adaway.org` не в `fake-ip-filter` → AGH получает фейковый IP | Добавить `+.github.io` и `+.adaway.org` в `fake-ip-filter` в `config.yaml`, перезапустить Mihomo |
+| DNS перестал работать после hot-reload | Hot-reload через `/configs` API иногда ломает DNS-листенер `:1053` | `killall clash && /etc/init.d/clash start` (полный перезапуск) |
 
 ---
 
