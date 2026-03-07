@@ -69,13 +69,16 @@ Router/
     │
     ├── cf-ip-update.sh                # поиск лучшего CF edge IP (только для прокси за Cloudflare CDN)
     ├── sni-scan.sh                    # тест SNI через туннель Mihomo (только для прокси за Cloudflare CDN)
+    ├── wifi-optimize.sh               # максимизация мощности и покрытия WiFi
     ├── 99-cf-dpi-bypass.nft           # DPI bypass через nftables MSS clamp
     ├── xray-fragment.json             # шаблон конфига Xray fragment (генерируется из UCI при старте)
     │
     └── luci/
         ├── menu.d/luci-app-cf-optimizer.json   # пункт меню "Proxy Optimizer"
+        ├── menu.d/luci-app-adguardhome.json    # замена меню AGH (одна кнопка "Open Dashboard")
         ├── acl.d/luci-app-cf-optimizer.json    # права доступа rpcd
-        └── view/cf-optimizer/main.js           # JS-страница управления
+        ├── view/cf-optimizer/main.js           # JS-страница управления
+        └── view/adguardhome/dashboard.js       # кастомная страница AGH (кнопка, без авто-открытия)
 ```
 
 > Реальный `config.yaml` с ключами VPN хранится локально и **не публикуется** (`.gitignore`).
@@ -160,6 +163,38 @@ UCI: `watchdog_enabled`
 ```
 
 Основная причина прироста — `drop_caches` при установке и более агрессивный `vfs_cache_pressure` в дальнейшем. Процессы (Clash ~100 MB, AGH ~90 MB, Xray ~30 MB) в сумме занимают ~230 MB физической памяти — остаток свободен.
+
+---
+
+### WiFi Optimization (`wifi-optimize.sh`)
+
+Максимизирует мощность передатчика и ширину канала WiFi на GL-MT6000. Применяется однократно — настройки сохраняются в UCI и переживают перезагрузки.
+
+| Диапазон | До | После |
+| --- | --- | --- |
+| 2.4 ГГц | ch1, HE20, 20 dBm | ch6, **HE40**, 20 dBm |
+| 5 ГГц | ch36, HE80, 20 dBm | ch149, **HE80, 30 dBm** |
+| TX мощность 5 ГГц | 100 мВт | **1000 мВт (10×)** |
+
+**Почему ch149 и страна BO:**
+
+- Regulatory database прошивки (`wireless-regdb`) ограничивает страну `00` и `RU` максимумом 20 dBm на всех диапазонах
+- Country code `BO` (Bolivia) в этой же базе разрешает **30 dBm на U-NII-3 (5735–5835 МГц = ch149–165)**
+- Драйвер MT76 c `txpower auto` берёт максимум разрешённый регдоменом — `fixed 3000 mBm` в этом режиме не работает
+
+**2.4 ГГц:** ch6 вместо ch1 — центральная позиция в диапазоне, меньше соседских помех. HE40 (40 МГц) удваивает пропускную способность. `noscan=1` — игнорирует HT40-intolerant биконы соседей.
+
+**5 ГГц:** ch149 (5745 МГц) — U-NII-3 диапазон, нет DFS, нет задержки радар-детекции. 30 dBm = +10 дБ к дефолтным 20 dBm на ch36. Чипсет MT7986A аппаратно поддерживает эту мощность.
+
+```sh
+# Применить оптимизацию
+/usr/local/bin/wifi-optimize.sh
+
+# Текущий статус без изменений
+/usr/local/bin/wifi-optimize.sh --show
+```
+
+> Скрипт автоматически устанавливается через `setup-cf-optimizer.sh`.
 
 ---
 
