@@ -88,7 +88,9 @@ return view.extend({
 								var s = parseStatus(txt);
 								if (s['LAST_RUN'] && s['LAST_RUN'] !== prevLastRun) {
 									window.clearInterval(poll);
-									window.location.reload();
+									// Monitor writes LAST_RUN first, then proxy data (~12s later).
+									// Wait 20s before reload so all fields are written.
+									window.setTimeout(function() { window.location.reload(); }, 20000);
 								}
 							});
 						}, 10000);
