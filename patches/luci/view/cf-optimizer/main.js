@@ -78,10 +78,21 @@ return view.extend({
 			E('button', {
 				'class': 'btn cbi-button cbi-button-apply',
 				'click': ui.createHandlerFn(this, function() {
+					var prevLastRun = lat['LAST_RUN'] || '';
 					return fs.exec('/usr/local/bin/latency-start.sh', []).then(function() {
 						ui.addNotification(null, E('p',
-							_('Latency monitor запущен в фоне. Результат появится через ~1 мин.')),
+							_('Latency monitor запущен. Страница обновится автоматически (~1 мин.).')),
 							'info');
+						var poll = window.setInterval(function() {
+							fs.read('/var/run/latency-monitor.status').catch(function() { return ''; }).then(function(txt) {
+								var s = parseStatus(txt);
+								if (s['LAST_RUN'] && s['LAST_RUN'] !== prevLastRun) {
+									window.clearInterval(poll);
+									window.location.reload();
+								}
+							});
+						}, 10000);
+						window.setTimeout(function() { window.clearInterval(poll); }, 180000);
 					}).catch(function(err) {
 						ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
 					});
