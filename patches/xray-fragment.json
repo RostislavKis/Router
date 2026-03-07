@@ -1,0 +1,41 @@
+{
+  "_comment": "Xray-core Block 4: TLS fragment proxy для Mihomo dialer-proxy.",
+  "_comment2": "Запускать: xray -c /etc/xray-fragment.json &",
+  "_comment3": "В config.yaml добавить dialer-proxy: xray-fragment к нужному прокси.",
+  "_comment4": "Xray aarch64: https://github.com/XTLS/Xray-core/releases (Xray-linux-arm64-v8a.zip)",
+
+  "log": {
+    "loglevel": "none"
+  },
+  "inbounds": [
+    {
+      "port": 10801,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": false
+      },
+      "sniffing": {
+        "enabled": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "fragment-out",
+      "settings": {
+        "fragment": {
+          "packets": "tlshello",
+          "length": "10-30",
+          "interval": "10-20"
+        }
+      },
+      "streamSettings": {
+        "sockopt": {
+          "tcpNoDelay": true
+        }
+      }
+    }
+  ]
+}

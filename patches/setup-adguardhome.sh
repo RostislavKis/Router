@@ -6,6 +6,7 @@
 #   1. Sets AGH upstream DNS → Mihomo on 127.0.0.1:1053 (fake-ip mode)
 #   2. Disables AAAA queries (Mihomo runs with ipv6: false)
 #   3. Sets AGH admin login and password
+#   4. Removes non-working LuCI tabs (Filters, Query Log, Settings)
 #
 # Usage:
 #   chmod +x setup-adguardhome.sh
@@ -80,9 +81,40 @@ echo "==> Restarting AdGuard Home..."
 /etc/init.d/adguardhome restart
 
 echo ""
+echo "==> Removing non-working AdGuard Home tabs from LuCI..."
+echo "    (Filters, Query Log, Settings — broken through LuCI, not needed)"
+
+AGH_CTRL=""
+for path in \
+    /usr/lib/lua/luci/controller/adguardhome.lua \
+    /usr/lib/lua/luci/controller/admin/adguardhome.lua \
+    /usr/lib/lua/luci/controller/gl-adguardhome.lua; do
+    if [ -f "$path" ]; then
+        AGH_CTRL="$path"
+        break
+    fi
+done
+
+if [ -n "$AGH_CTRL" ]; then
+    [ ! -f "${AGH_CTRL}.bak" ] && cp "$AGH_CTRL" "${AGH_CTRL}.bak"
+    sed -i \
+        -e '/["'"'"']\(filters\|query_log\|settings\)["'"'"']/s/^/--/' \
+        -e '/Filters\|Query.Log\|AdGuard.*Settings/s/^/--/' \
+        "$AGH_CTRL"
+    rm -rf /tmp/luci-*
+    /etc/init.d/rpcd restart 2>/dev/null || true
+    /etc/init.d/uhttpd restart 2>/dev/null || true
+    echo "    Tabs removed, LuCI restarted: $AGH_CTRL"
+else
+    echo "    INFO: AGH LuCI controller not found, skipping"
+    echo "         Check: find /usr/lib/lua/luci -name '*adguard*'"
+fi
+
+echo ""
 echo "==> Done. Verify with:"
 echo "    nslookup gemini.google.com 127.0.0.1"
 echo "    # Expected: Address: 198.18.x.x (fake-ip → proxied)"
 echo ""
 echo "    nslookup yandex.ru 127.0.0.1"
 echo "    # Expected: real IP (direct)"
+echo ""

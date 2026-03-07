@@ -1,0 +1,32 @@
+# 99-cf-dpi-bypass.nft
+# Block 3: DPI bypass через MSS clamping для исходящего трафика Mihomo.
+#
+# Принцип работы:
+#   Принудительно ограничивает TCP MSS для соединений Mihomo к upstream-прокси.
+#   TLS ClientHello разбивается на несколько сегментов — DPI не может
+#   прочитать SNI из первого пакета.
+#
+# Почему безопасно:
+#   meta mark 2 — это routing-mark Mihomo (задан в config.yaml: routing-mark: 2).
+#   Правило применяется ТОЛЬКО к исходящему трафику самого Mihomo.
+#   LAN-трафик устройств не затрагивается.
+#
+# MSS = 150 (щадящий режим):
+#   40  байт — максимальная фрагментация, +20-40 мс к handshake (слишком агрессивно)
+#   150 байт — баланс защиты и скорости (рекомендуется)
+#   200 байт — минимальная фрагментация, почти без влияния на задержку
+#
+# Применить вручную: nft -f /etc/nftables.d/99-cf-dpi-bypass.nft
+# Удалить:          nft delete table inet cf_dpi_bypass
+
+table inet cf_dpi_bypass {
+    chain output {
+        type filter hook output priority mangle; policy accept;
+
+        # Только трафик Mihomo (routing-mark: 2) на CF-порты
+        # Порты: 443 (HTTPS), 2053, 2083, 2087, 2096 (альтернативные CF порты)
+        meta mark 2 tcp dport { 443, 2053, 2083, 2087, 2096 } \
+            tcp flags syn \
+            tcp option maxseg size set 150
+    }
+}
