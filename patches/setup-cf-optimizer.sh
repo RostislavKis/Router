@@ -172,6 +172,11 @@ cp "$SCRIPT_DIR/luci/view/cf-optimizer/main.js" \
 chmod 644 /www/luci-static/resources/view/cf-optimizer/main.js
 echo "    view/cf-optimizer/main.js         -> /www/luci-static/resources/view/cf-optimizer/"
 
+cp "$SCRIPT_DIR/luci/view/cf-optimizer/settings.js" \
+   /www/luci-static/resources/view/cf-optimizer/settings.js
+chmod 644 /www/luci-static/resources/view/cf-optimizer/settings.js
+echo "    view/cf-optimizer/settings.js     -> /www/luci-static/resources/view/cf-optimizer/"
+
 # JavaScript view — AdGuard Home (button only, no auto-open)
 mkdir -p /www/luci-static/resources/view/adguardhome
 cp "$SCRIPT_DIR/luci/view/adguardhome/dashboard.js" \

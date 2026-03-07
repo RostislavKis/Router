@@ -416,14 +416,15 @@ ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patche
 
 ### Что делает установщик
 
-1. Копирует все скрипты в `/usr/local/bin/` с правами 755 (9 скриптов)
-2. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
+1. Копирует 11 скриптов в `/usr/local/bin/` с правами 755
+2. Устанавливает Xray-core бинарник (aarch64) — автоматически, если есть интернет
+3. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
    - **ON**: Latency Monitor, DPI Bypass, Watchdog, Geo Update
-   - **OFF**: Xray Fragment (нужен бинарник), CF IP Updater, SNI Scanner (только CDN)
-3. Устанавливает LuCI-файлы (меню "Proxy Optimizer", ACL, JS-view)
-4. Добавляет задачи в cron (6 задач)
-5. Применяет nftables DPI bypass (MSS=150)
-6. Создаёт и включает `/etc/init.d/cf-optimizer`
+   - **OFF**: Xray Fragment (бинарник уже есть, нужно добавить `dialer-proxy`), CF IP Updater, SNI Scanner (только CDN)
+4. Устанавливает LuCI-файлы: меню "Proxy Optimizer", ACL, `main.js` (Overview), `settings.js` (Settings), `dashboard.js` (AGH)
+5. Добавляет 7 задач в cron
+6. Применяет nftables DPI bypass (MSS=150)
+7. Создаёт и включает `/etc/init.d/cf-optimizer` (START=96)
 
 ### Шаг 3. Проверка
 
@@ -579,7 +580,7 @@ logread | grep 'clash-rules' | tail -5
 
 ---
 
-### Шаг 7. Установка CF IP Optimizer
+### Шаг 7. Установка Proxy Optimizer
 
 ```sh
 scp -r patches/ root@192.168.1.1:/tmp/patches/
@@ -631,7 +632,7 @@ uci set cf_optimizer.main.watchdog_enabled=1
 # Geo update (включён по умолчанию)
 uci set cf_optimizer.main.geo_update_enabled=1
 
-# Xray fragment (выключен по умолчанию — нужен бинарник)
+# Xray fragment (выключен по умолчанию — бинарник установлен, нужно добавить dialer-proxy)
 uci set cf_optimizer.main.xray_fragment_enabled=0
 uci set cf_optimizer.main.xray_fragment_length='10-30'
 uci set cf_optimizer.main.xray_fragment_interval='10-20'
