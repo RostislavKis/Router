@@ -51,8 +51,9 @@ cp "$SCRIPT_DIR/latency-start.sh"    /usr/local/bin/latency-start.sh    && chmod
 cp "$SCRIPT_DIR/mihomo-watchdog.sh"  /usr/local/bin/mihomo-watchdog.sh  && chmod 755 /usr/local/bin/mihomo-watchdog.sh
 cp "$SCRIPT_DIR/log-rotate.sh"       /usr/local/bin/log-rotate.sh       && chmod 755 /usr/local/bin/log-rotate.sh
 cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod 755 /usr/local/bin/geo-update.sh
-cp "$SCRIPT_DIR/xray-control.sh"     /usr/local/bin/xray-control.sh     && chmod 755 /usr/local/bin/xray-control.sh
-cp "$SCRIPT_DIR/xray-install.sh"     /usr/local/bin/xray-install.sh     && chmod 755 /usr/local/bin/xray-install.sh
+cp "$SCRIPT_DIR/xray-control.sh"      /usr/local/bin/xray-control.sh      && chmod 755 /usr/local/bin/xray-control.sh
+cp "$SCRIPT_DIR/xray-install.sh"      /usr/local/bin/xray-install.sh      && chmod 755 /usr/local/bin/xray-install.sh
+cp "$SCRIPT_DIR/xray-apply-config.sh" /usr/local/bin/xray-apply-config.sh && chmod 755 /usr/local/bin/xray-apply-config.sh
 cp "$SCRIPT_DIR/cf-ip-update.sh"     /usr/local/bin/cf-ip-update.sh     && chmod 755 /usr/local/bin/cf-ip-update.sh
 cp "$SCRIPT_DIR/sni-scan.sh"         /usr/local/bin/sni-scan.sh         && chmod 755 /usr/local/bin/sni-scan.sh
 

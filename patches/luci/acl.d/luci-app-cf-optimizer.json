@@ -18,8 +18,9 @@
 			"uci": [ "cf_optimizer" ],
 			"file": {
 				"/usr/local/bin/latency-start.sh":  [ "exec" ],
-				"/usr/local/bin/xray-control.sh":   [ "exec" ],
-				"/usr/local/bin/cf-ip-update.sh":   [ "exec" ]
+				"/usr/local/bin/xray-control.sh":      [ "exec" ],
+				"/usr/local/bin/xray-apply-config.sh": [ "exec" ],
+				"/usr/local/bin/cf-ip-update.sh":      [ "exec" ]
 			}
 		}
 	}

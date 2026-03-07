@@ -121,27 +121,58 @@ return view.extend({
 		══════════════════════════════════════════════ */
 		const xrButtons = xrInstalled
 			? [
-				E('button', {
-					'class': 'btn cbi-button cbi-button-apply',
-					'style': 'margin-right:8px',
-					'click': ui.createHandlerFn(this, function() {
-						return fs.exec('/usr/local/bin/xray-control.sh', ['start']).then(function() {
-							ui.addNotification(null, E('p', _('Xray запущен. Обновите страницу для проверки статуса.')), 'info');
-						}).catch(function(err) {
-							ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
-						});
-					})
-				}, '▶ ' + _('Запустить Xray')),
-				E('button', {
-					'class': 'btn cbi-button cbi-button-reset',
-					'click': ui.createHandlerFn(this, function() {
-						return fs.exec('/usr/local/bin/xray-control.sh', ['stop']).then(function() {
-							ui.addNotification(null, E('p', _('Xray остановлен.')), 'info');
-						}).catch(function(err) {
-							ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
-						});
-					})
-				}, '■ ' + _('Остановить Xray'))
+				/* ── Start / Stop ── */
+				E('div', { 'style': 'margin-bottom:12px' }, [
+					E('button', {
+						'class': 'btn cbi-button cbi-button-apply',
+						'style': 'margin-right:8px',
+						'click': ui.createHandlerFn(this, function() {
+							return fs.exec('/usr/local/bin/xray-control.sh', ['start']).then(function() {
+								ui.addNotification(null, E('p', _('Xray запущен. Обновите страницу для проверки статуса.')), 'info');
+							}).catch(function(err) {
+								ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
+							});
+						})
+					}, '▶ ' + _('Запустить Xray')),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-reset',
+						'click': ui.createHandlerFn(this, function() {
+							return fs.exec('/usr/local/bin/xray-control.sh', ['stop']).then(function() {
+								ui.addNotification(null, E('p', _('Xray остановлен.')), 'info');
+							}).catch(function(err) {
+								ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
+							});
+						})
+					}, '■ ' + _('Остановить Xray'))
+				]),
+				/* ── config.yaml patch ── */
+				E('p', { 'style': 'margin:4px 0 6px;font-size:0.9em;color:#555' },
+					_('Автоматически добавить / удалить dialer-proxy: xray-fragment во всех прокси config.yaml (резервная копия создаётся автоматически):')),
+				E('div', {}, [
+					E('button', {
+						'class': 'btn cbi-button cbi-button-action',
+						'style': 'margin-right:8px',
+						'click': ui.createHandlerFn(this, function() {
+							return fs.exec('/usr/local/bin/xray-apply-config.sh', ['add']).then(function(res) {
+								const msg = (res && res.stdout) ? res.stdout : _('dialer-proxy добавлен во все прокси. Mihomo перезагружен.');
+								ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap;font-size:0.9em' }, msg), 'info');
+							}).catch(function(err) {
+								ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
+							});
+						})
+					}, '[+] ' + _('Применить ко всем прокси')),
+					E('button', {
+						'class': 'btn cbi-button cbi-button-negative',
+						'click': ui.createHandlerFn(this, function() {
+							return fs.exec('/usr/local/bin/xray-apply-config.sh', ['remove']).then(function(res) {
+								const msg = (res && res.stdout) ? res.stdout : _('dialer-proxy удалён из всех прокси. Mihomo перезагружен.');
+								ui.addNotification(null, E('pre', { 'style': 'white-space:pre-wrap;font-size:0.9em' }, msg), 'info');
+							}).catch(function(err) {
+								ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
+							});
+						})
+					}, '[-] ' + _('Удалить из всех прокси'))
+				])
 			  ]
 			: [
 				E('p', { 'style': 'color:#ff9800;margin:8px 0' }, [
