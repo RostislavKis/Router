@@ -1,6 +1,5 @@
 'use strict';
 'require view';
-'require form';
 'require fs';
 'require ui';
 
@@ -13,7 +12,6 @@ function parseStatus(text) {
 	return s;
 }
 
-/* ── Small helper: coloured badge ── */
 function badge(text, color) {
 	return E('span', {
 		'style': 'display:inline-block;padding:2px 8px;border-radius:3px;font-weight:bold;background:' + color + ';color:#fff'
@@ -37,25 +35,21 @@ return view.extend({
 		const geminiOk  = lat['GEMINI_STATUS'] === 'ok';
 		const hasRun    = !!lat['LAST_RUN'];
 
-		/* ── Watchdog colours ── */
 		const wdStatus  = wd['WATCHDOG_STATUS'] || '';
 		const wdColor   = wdStatus === 'healthy' || wdStatus === 'recovered' ? '#4caf50'
-		                : wdStatus === 'failed'     ? '#f44336'
+		                : wdStatus === 'failed'                               ? '#f44336'
 		                : wdStatus === 'warning' || wdStatus === 'restarting' ? '#ff9800'
 		                : '#9e9e9e';
 
-		/* ── Xray colours ── */
-		const xrStatus  = xr['XRAY_STATUS'] || '';
+		const xrStatus    = xr['XRAY_STATUS'] || '';
 		const xrInstalled = xr['XRAY_INSTALLED'] === '1';
 		const xrRunning   = xrStatus === 'running';
-		const xrColor   = xrRunning ? '#4caf50'
-		                : xrStatus === 'not_installed' ? '#9e9e9e'
-		                : xrStatus === 'failed'         ? '#f44336'
-		                : '#ff9800';
+		const xrColor     = xrRunning                 ? '#4caf50'
+		                  : xrStatus === 'not_installed' ? '#9e9e9e'
+		                  : xrStatus === 'failed'        ? '#f44336'
+		                  : '#ff9800';
 
-		/* ══════════════════════════════════════════════
-		   CARD 1: Latency Monitor
-		══════════════════════════════════════════════ */
+		/* ── CARD 1: Latency Monitor ── */
 		const latCard = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Latency Monitor — статус')),
 			E('table', { 'class': 'table', 'style': 'width:100%;margin-bottom:10px' }, [
@@ -95,9 +89,7 @@ return view.extend({
 			}, '▶ ' + _('Запустить мониторинг сейчас'))
 		]);
 
-		/* ══════════════════════════════════════════════
-		   CARD 2: Mihomo Watchdog
-		══════════════════════════════════════════════ */
+		/* ── CARD 2: Mihomo Watchdog ── */
 		const wdCard = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Mihomo Watchdog — статус')),
 			E('table', { 'class': 'table', 'style': 'width:100%;margin-bottom:10px' }, [
@@ -116,12 +108,9 @@ return view.extend({
 			])
 		]);
 
-		/* ══════════════════════════════════════════════
-		   CARD 3: Xray Fragment
-		══════════════════════════════════════════════ */
+		/* ── CARD 3: Xray Fragment ── */
 		const xrButtons = xrInstalled
 			? [
-				/* ── Start / Stop ── */
 				E('div', { 'style': 'margin-bottom:12px' }, [
 					E('button', {
 						'class': 'btn cbi-button cbi-button-apply',
@@ -145,7 +134,6 @@ return view.extend({
 						})
 					}, '■ ' + _('Остановить Xray'))
 				]),
-				/* ── config.yaml patch ── */
 				E('p', { 'style': 'margin:4px 0 6px;font-size:0.9em;color:#555' },
 					_('Автоматически добавить / удалить dialer-proxy: xray-fragment во всех прокси config.yaml (резервная копия создаётся автоматически):')),
 				E('div', {}, [
@@ -201,116 +189,10 @@ return view.extend({
 			E('div', {}, xrButtons)
 		]);
 
-		/* ══════════════════════════════════════════════
-		   UCI FORM
-		══════════════════════════════════════════════ */
-		const m = new form.Map('cf_optimizer', _('Proxy Optimizer'),
-			_('Управление оптимизаторами Mihomo.'));
-
-		let s, o;
-
-		/* ── Включить / Выключить ── */
-		s = m.section(form.NamedSection, 'main', 'cf_optimizer',
-			_('Включить / Выключить'));
-		s.addremove = false;
-		s.anonymous = true;
-
-		s.option(form.Flag, 'latency_enabled', _('Latency Monitor'),
-			_('Тестировать прокси и переключать GEMINI на лучший (каждые 2 часа). Гистерезис — защита от лишних переключений.'));
-
-		s.option(form.Flag, 'dpi_bypass_enabled', _('DPI Bypass — nftables MSS'),
-			_('Разбивать TLS ClientHello через MSS clamp. Только трафик Mihomo (mark=2), порты 443/2053/2083/2087/2096.'));
-
-		s.option(form.Flag, 'watchdog_enabled', _('Mihomo Watchdog'),
-			_('Перезапускать Mihomo если API не отвечает 2 проверки подряд (каждые 10 мин). Не трогает выбор прокси.'));
-
-		s.option(form.Flag, 'xray_fragment_enabled', _('Xray Fragment — DPI bypass'),
-			_('Запускать Xray SOCKS5 :10801 при старте системы. Требует: установить бинарник + dialer-proxy в config.yaml.'));
-
-		s.option(form.Flag, 'geo_update_enabled', _('Geo Update'),
-			_('Обновлять geoip.dat / geosite.dat / country.mmdb раз в неделю (вс 04:00).'));
-
-		s.option(form.Flag, 'ip_updater_enabled', _('CF IP Updater'),
-			_('Только если прокси стоят за Cloudflare CDN.'));
-
-		s.option(form.Flag, 'sni_scanner_enabled', _('SNI Scanner'),
-			_('Только если прокси стоят за Cloudflare CDN.'));
-
-		/* ── Настройки Latency Monitor ── */
-		s = m.section(form.NamedSection, 'main', 'cf_optimizer',
-			_('Latency Monitor — настройки'));
-		s.addremove = false;
-		s.anonymous = true;
-
-		o = s.option(form.Value, 'gemini_group', _('GEMINI группа'));
-		o.placeholder = '🤖 GEMINI';
-		o.description = _('Точное имя selector-группы из config.yaml (включая эмодзи)');
-
-		o = s.option(form.Value, 'main_group', _('Main группа (мониторинг)'));
-		o.placeholder = 'PrvtVPN All Auto';
-		o.description = _('url-test группа — только мониторинг, Mihomo управляет ей сам');
-
-		o = s.option(form.Value, 'switch_threshold', _('Порог переключения GEMINI (%)'));
-		o.placeholder = '20';
-		o.datatype = 'range(0, 50)';
-		o.description = _('Переключить GEMINI только если новый прокси быстрее текущего на X%. 0 = всегда, 20 = рекомендуется');
-
-		/* ── Настройки DPI bypass ── */
-		s = m.section(form.NamedSection, 'main', 'cf_optimizer',
-			_('DPI Bypass — настройки'));
-		s.addremove = false;
-		s.anonymous = true;
-
-		o = s.option(form.Value, 'mss_value', _('nftables MSS Value'));
-		o.placeholder = '150';
-		o.datatype = 'range(40, 1460)';
-		o.description = _('40 = максимум защиты, 150 = рекомендуется, 200 = минимальный эффект. Применяется после перезапуска.');
-
-		o = s.option(form.Value, 'xray_fragment_length', _('Xray — длина фрагментов (байт)'));
-		o.placeholder = '10-30';
-		o.description = _('Диапазон байт фрагментации TLS ClientHello. Применяется при следующем старте Xray.');
-
-		o = s.option(form.Value, 'xray_fragment_interval', _('Xray — интервал (мс)'));
-		o.placeholder = '10-20';
-		o.description = _('Задержка между фрагментами в мс. Применяется при следующем старте Xray.');
-
-		/* ── Настройки CF (CDN) ── */
-		s = m.section(form.NamedSection, 'main', 'cf_optimizer',
-			_('CF CDN — настройки (только для прокси за Cloudflare CDN)'));
-		s.addremove = false;
-		s.anonymous = true;
-
-		o = s.option(form.Value, 'worker_url', _('CF Worker API URL'));
-		o.placeholder = 'https://YOUR.workers.dev';
-
-		o = s.option(form.Value, 'regions', _('Регионы CF edge'));
-		o.placeholder = 'FI,DE,NL';
-		o.description = _('Коды стран через запятую');
-
-		o = s.option(form.Value, 'update_threshold', _('Порог обновления IP (%)'));
-		o.placeholder = '20';
-		o.datatype = 'range(1, 100)';
-
-		/* ── Mihomo API ── */
-		s = m.section(form.NamedSection, 'main', 'cf_optimizer', _('Mihomo API'));
-		s.addremove = false;
-		s.anonymous = true;
-
-		o = s.option(form.Value, 'mihomo_api', _('API URL'));
-		o.placeholder = 'http://127.0.0.1:9090';
-
-		o = s.option(form.Value, 'mihomo_secret', _('API Secret'));
-		o.password = true;
-		o.description = _('Оставить пустым если secret не задан в config.yaml');
-
-		o = s.option(form.Value, 'mihomo_socks', _('SOCKS5 (SNI тесты)'));
-		o.placeholder = '127.0.0.1:7891';
-
-		return m.render().then(function(mapEl) {
-			return E('div', {}, [latCard, wdCard, xrCard, mapEl]);
-		});
+		return E('div', {}, [latCard, wdCard, xrCard]);
 	},
 
+	handleSave: null,
 	handleSaveApply: null,
 	handleReset: null
 });

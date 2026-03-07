@@ -17,5 +17,13 @@
 			"type": "view",
 			"path": "cf-optimizer/main"
 		}
+	},
+	"admin/services/cf-optimizer/settings": {
+		"title": "Settings",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "cf-optimizer/settings"
+		}
 	}
 }

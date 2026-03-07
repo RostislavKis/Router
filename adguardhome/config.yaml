@@ -6,7 +6,7 @@ http:
   session_ttl: 720h
 users:
   - name: root
-    password: YOUR_AGH_PASSWORD_HASH  # bcrypt hash — сгенерируй через: htpasswd -bnBC 10 "" password | tr -d ':\n'
+    password: '$2b$10$lOOoSmdzB2jZQ73mugmktOQ6L//NzV.RGbzGzbND7w6HptAqIkHB.'
 auth_attempts: 5
 block_auth_min: 15
 http_proxy: ""

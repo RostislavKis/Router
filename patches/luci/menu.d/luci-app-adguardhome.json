@@ -5,9 +5,6 @@
 		"action": {
 			"type": "alias",
 			"path": "admin/services/adguardhome/dashboard"
-		},
-		"depends": {
-			"acl": [ "luci-app-adguardhome" ]
 		}
 	},
 	"admin/services/adguardhome/dashboard": {

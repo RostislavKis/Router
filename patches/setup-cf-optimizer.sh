@@ -80,9 +80,20 @@ chmod 644 /etc/sysctl.d/99-router-mem.conf
 sysctl -e -p /etc/sysctl.d/99-router-mem.conf >/dev/null 2>&1 || true
 echo "    99-router-mem.conf  -> /etc/sysctl.d/ (applied)"
 
-# --- 2. Create UCI config ---
+# --- 2. Install Xray-core ---
 echo ""
-echo "==> [2/6] Creating /etc/config/cf_optimizer (UCI)"
+echo "==> [2/7] Installing Xray-core (aarch64)"
+if /usr/local/bin/xray-install.sh; then
+    echo "    Xray-core — установлен"
+    # Создаём status-файл сразу — иначе LuCI покажет "Xray не установлен"
+    /usr/local/bin/xray-control.sh status >/dev/null 2>&1 || true
+else
+    echo "    WARNING: Xray не установлен (нет интернета?) — запустите вручную: /usr/local/bin/xray-install.sh"
+fi
+
+# --- 3. Create UCI config ---
+echo ""
+echo "==> [3/7] Creating /etc/config/cf_optimizer (UCI)"
 
 touch /etc/config/cf_optimizer
 uci -q delete cf_optimizer.main 2>/dev/null || true
@@ -130,7 +141,7 @@ echo "    UCI config created."
 
 # --- 3. Deploy LuCI (JSON menu + ACL + JS view — OpenWrt 26.x style, no Lua) ---
 echo ""
-echo "==> [3/6] Installing LuCI page (Services > Proxy Optimizer)"
+echo "==> [4/7] Installing LuCI page (Services > Proxy Optimizer)"
 
 # JSON menu entry (Proxy Optimizer)
 mkdir -p /usr/share/luci/menu.d
@@ -144,7 +155,8 @@ echo "    menu.d/luci-app-cf-optimizer.json -> /usr/share/luci/menu.d/"
 cp "$SCRIPT_DIR/luci/menu.d/luci-app-adguardhome.json" \
    /usr/share/luci/menu.d/luci-app-adguardhome.json
 chmod 644 /usr/share/luci/menu.d/luci-app-adguardhome.json
-echo "    menu.d/luci-app-adguardhome.json  -> /usr/share/luci/menu.d/ (tabs removed)"
+echo "    menu.d/luci-app-adguardhome.json  -> /usr/share/luci/menu.d/"
+
 
 # ACL permissions for rpcd
 mkdir -p /usr/share/rpcd/acl.d
@@ -179,7 +191,7 @@ echo "    LuCI installed, cache cleared, rpcd/uhttpd restarted."
 
 # --- 4. Setup cron ---
 echo ""
-echo "==> [4/6] Setting up cron"
+echo "==> [5/7] Setting up cron"
 
 CRON_FILE="/etc/crontabs/root"
 touch "$CRON_FILE"
@@ -215,7 +227,7 @@ echo "    SNI scan:          daily 02:30 (activate via LuCI)"
 
 # --- 5. Apply DPI bypass nftables ---
 echo ""
-echo "==> [5/6] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
+echo "==> [6/7] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
 
 sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/nftables.d/99-cf-dpi-bypass.nft
 
@@ -228,7 +240,7 @@ fi
 
 # --- 6. Init script ---
 echo ""
-echo "==> [6/6] Creating /etc/init.d/cf-optimizer"
+echo "==> [7/7] Creating /etc/init.d/cf-optimizer"
 
 cat > /etc/init.d/cf-optimizer << 'INITEOF'
 #!/bin/sh /etc/rc.common
@@ -277,6 +289,9 @@ start() {
         fi
     ) &
 
+    # Recreate xray status file (lost on reboot — /var/run is tmpfs)
+    /usr/local/bin/xray-control.sh status >/dev/null 2>&1 || true
+
     logger -t cf-optimizer "Startup sequence launched (waiting for Mihomo API)"
 
     # CF IP updater (90s delay)
@@ -320,7 +335,7 @@ echo "   [ON]  Latency Monitor  — GEMINI каждые 2 часа (гистер
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
 echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"
 echo "   [ON]  Geo Update       — geoip/geosite раз в неделю"
-echo "   [OFF] Xray Fragment    — установить бинарник: /usr/local/bin/xray-install.sh"
+echo "   [OFF] Xray Fragment    — включить в LuCI (бинарник уже установлен)"
 echo "   [OFF] CF IP Updater    — только для прокси за Cloudflare CDN"
 echo "   [OFF] SNI Scanner      — только для прокси за Cloudflare CDN"
 echo ""

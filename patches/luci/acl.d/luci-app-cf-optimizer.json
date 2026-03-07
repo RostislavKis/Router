@@ -9,9 +9,6 @@
 				"/var/run/xray-fragment.status":   [ "read" ],
 				"/var/run/cf-optimizer.status":    [ "read" ],
 				"/var/log/latency-monitor.log":    [ "read" ]
-			},
-			"ubus": {
-				"service": [ "list" ]
 			}
 		},
 		"write": {

@@ -1,146 +1,154 @@
 #!/bin/sh
 # setup-clash.sh
-# Installs Mihomo (Clash Meta) on OpenWrt with TPROXY fail-safe.
+# Устанавливает SSClash (zerolabnet/SSClash) — Mihomo в виде OpenWrt-пакета.
 #
-# What this does:
-#   1. Fix wget (symlink to uclient-fetch for HTTPS support)
-#   2. Install required kernel modules (kmod-nft-tproxy, iptables-nft)
-#   3. Create /opt/clash/ directory structure
-#   4. Download Mihomo binary (aarch64) from GitHub releases
-#   5. Download geo databases (geoip.dat, geosite.dat, country.mmdb)
-#   6. Install TPROXY nftables rules
-#   7. Install /etc/init.d/clash with FAIL-SAFE:
-#      TPROXY applied ONLY after Mihomo API responds.
-#      If Mihomo fails → internet works directly (no TPROXY blackhole).
-#   8. Enable clash service (does NOT start — requires config.yaml)
+# SSClash предоставляет:
+#   - /etc/init.d/clash     (procd, START=21, DNS через dnsmasq, TPROXY через clash-rules)
+#   - /opt/clash/bin/clash-rules  (nftables TPROXY-скрипт)
+#   - luci-app-ssclash      (веб-интерфейс в LuCI)
 #
-# After running this script, put your config.yaml at:
-#   /opt/clash/config.yaml
-# Required fields in config.yaml:
+# Использование:
+#   chmod +x setup-clash.sh
+#   ./setup-clash.sh
+#
+# Запуск на роутере через SSH:
+#   scp patches/setup-clash.sh root@192.168.1.1:/tmp/
+#   ssh root@192.168.1.1 "chmod +x /tmp/setup-clash.sh && /tmp/setup-clash.sh"
+#
+# После выполнения скопируйте конфиг:
+#   scp config.yaml root@192.168.1.1:/opt/clash/config.yaml
+#   /etc/init.d/clash start
+#
+# Требования в config.yaml:
 #   tproxy-port: 7894
 #   routing-mark: 2
+#   dns:
+#     listen: '127.0.0.1:1053'
 #   external-controller: 0.0.0.0:9090
-#
-# Then start: /etc/init.d/clash start
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+SSCLASH_VERSION="3.5.0"
+SSCLASH_ARCH="aarch64_cortex-a53"
 
 MIHOMO_VERSION="v1.19.20"
-MIHOMO_ARCH="arm64"
-MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-${MIHOMO_ARCH}-${MIHOMO_VERSION}.gz"
+MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-arm64-${MIHOMO_VERSION}.gz"
 
 GEOIP_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
 GEOSITE_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
 MMDB_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb"
 
-echo "==> Clash/Mihomo: starting install"
+echo "==> SSClash + Mihomo: установка"
 echo ""
 
-# --- 1. Fix wget ---
-echo "==> [1/8] Fix wget (uclient-fetch HTTPS support)"
+# --- 1. Исправление wget ---
+echo "==> [1/6] Исправление wget (uclient-fetch, поддержка HTTPS)"
 ln -sf /bin/uclient-fetch /usr/bin/wget
-echo "    wget -> uclient-fetch (HTTPS enabled)"
+echo "    wget -> uclient-fetch"
 
-# --- 2. Install kernel modules ---
+# --- 2. Модуль ядра для TPROXY ---
 echo ""
-echo "==> [2/8] Installing kernel modules"
+echo "==> [2/6] Установка kmod-nft-tproxy"
 apk update >/dev/null 2>&1 || true
-apk add kmod-nft-tproxy iptables-nft 2>&1 | grep -E '(Installing|OK|already)' || true
-echo "    kmod-nft-tproxy, iptables-nft — done"
+apk add kmod-nft-tproxy 2>&1 | grep -E '(Installing|OK|already)' || true
+echo "    kmod-nft-tproxy — ОК"
 
-# --- 3. Directory structure ---
+# --- 3. SSClash APK-пакеты ---
 echo ""
-echo "==> [3/8] Creating /opt/clash/ structure"
-mkdir -p /opt/clash/bin /opt/clash/logs
-echo "    /opt/clash/bin, /opt/clash/logs — done"
+echo "==> [3/6] Установка SSClash ${SSCLASH_VERSION}"
 
-# --- 4. Mihomo binary ---
-echo ""
-echo "==> [4/8] Installing Mihomo ${MIHOMO_VERSION} (${MIHOMO_ARCH})"
+# Получаем URL пакетов из GitHub Releases API
+echo "    Поиск пакетов на GitHub..."
+RELEASE_JSON=$(uclient-fetch -q -O - \
+    "https://api.github.com/repos/zerolabnet/SSClash/releases/tags/v${SSCLASH_VERSION}" \
+    2>/dev/null) || RELEASE_JSON=""
 
-if [ -x /opt/clash/bin/mihomo ]; then
-    CURRENT=$(/opt/clash/bin/mihomo -v 2>&1 | grep -o 'v[0-9.]*' | head -1)
-    if [ "$CURRENT" = "$MIHOMO_VERSION" ]; then
-        echo "    Already installed: $CURRENT — skipping download"
-    else
-        echo "    Current: $CURRENT → upgrading to $MIHOMO_VERSION"
-        uclient-fetch -O /tmp/mihomo.gz "$MIHOMO_URL"
-        gunzip -c /tmp/mihomo.gz > /opt/clash/bin/mihomo
-        chmod 755 /opt/clash/bin/mihomo
-        rm -f /tmp/mihomo.gz
-    fi
-else
-    uclient-fetch -O /tmp/mihomo.gz "$MIHOMO_URL"
-    gunzip -c /tmp/mihomo.gz > /opt/clash/bin/mihomo
-    chmod 755 /opt/clash/bin/mihomo
-    rm -f /tmp/mihomo.gz
+# Извлекаем URL пакетов из JSON (ищем все .apk ссылки)
+SSCLASH_APK_URL=$(echo "$RELEASE_JSON" | \
+    grep -o 'https://github.com/[^"]*\.apk' | \
+    grep "${SSCLASH_ARCH}" | grep -v 'luci' | head -1)
+
+LUCI_APK_URL=$(echo "$RELEASE_JSON" | \
+    grep -o 'https://github.com/[^"]*\.apk' | \
+    grep 'luci-app-ssclash' | head -1)
+
+# Fallback URLs если API не дал результатов
+if [ -z "$SSCLASH_APK_URL" ]; then
+    SSCLASH_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/v${SSCLASH_VERSION}/ssclash_${SSCLASH_VERSION}-r1_${SSCLASH_ARCH}.apk"
+    echo "    (GitHub API не ответил, используем стандартный URL)"
+fi
+if [ -z "$LUCI_APK_URL" ]; then
+    LUCI_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/v${SSCLASH_VERSION}/luci-app-ssclash_${SSCLASH_VERSION}-r1_all.apk"
 fi
 
-echo "    Mihomo: $(/opt/clash/bin/mihomo -v 2>&1 | head -1)"
-
-# --- 5. Geo databases ---
+echo "    ssclash: $(basename "$SSCLASH_APK_URL")"
+echo "    luci:    $(basename "$LUCI_APK_URL")"
 echo ""
-echo "==> [5/8] Downloading geo databases"
+
+uclient-fetch -O /tmp/ssclash.apk "$SSCLASH_APK_URL"
+apk add --allow-untrusted /tmp/ssclash.apk
+rm -f /tmp/ssclash.apk
+echo "    ssclash — установлен"
+
+uclient-fetch -O /tmp/luci-app-ssclash.apk "$LUCI_APK_URL"
+apk add --allow-untrusted /tmp/luci-app-ssclash.apk
+rm -f /tmp/luci-app-ssclash.apk
+echo "    luci-app-ssclash — установлен"
+
+# --- 4. Бинарник Mihomo ---
+echo ""
+echo "==> [4/6] Установка Mihomo ${MIHOMO_VERSION} → /opt/clash/bin/clash"
+# SSClash ожидает бинарник именно с именем 'clash', не 'mihomo'
+mkdir -p /opt/clash/bin /opt/clash/logs
+
+uclient-fetch -O /tmp/mihomo.gz "$MIHOMO_URL"
+gunzip -c /tmp/mihomo.gz > /opt/clash/bin/clash
+chmod 755 /opt/clash/bin/clash
+rm -f /tmp/mihomo.gz
+
+echo "    $(/opt/clash/bin/clash -v 2>&1 | head -1)"
+
+# --- 5. Geo-базы ---
+echo ""
+echo "==> [5/6] Загрузка geo-баз данных"
 
 download_geo() {
     local url="$1" dest="$2"
     if [ -f "$dest" ] && [ "$(wc -c < "$dest")" -gt 1048576 ]; then
-        echo "    $(basename $dest) — already present, skipping"
+        echo "    $(basename "$dest") — уже есть, пропускаем"
         return 0
     fi
     uclient-fetch -O "${dest}.tmp" "$url" && mv "${dest}.tmp" "$dest" || {
         rm -f "${dest}.tmp"
-        echo "    WARNING: failed to download $(basename $dest)"
-        return 1
+        echo "    WARN: не удалось загрузить $(basename "$dest")"
     }
-    echo "    $(basename $dest) — $(wc -c < "$dest") bytes"
+    echo "    $(basename "$dest") — $(wc -c < "$dest") байт"
 }
 
 download_geo "$GEOIP_URL"   /opt/clash/geoip.dat
 download_geo "$GEOSITE_URL" /opt/clash/geosite.dat
 download_geo "$MMDB_URL"    /opt/clash/country.mmdb
 
-# --- 6. TPROXY nft rules ---
+# --- 6. Включение сервиса ---
 echo ""
-echo "==> [6/8] Installing TPROXY nftables rules"
-mkdir -p /etc/nftables.d
-cp "$SCRIPT_DIR/clash-tproxy.nft" /etc/nftables.d/clash-tproxy.nft
-chmod 644 /etc/nftables.d/clash-tproxy.nft
-echo "    clash-tproxy.nft -> /etc/nftables.d/"
-
-# --- 7. Init script with fail-safe ---
-echo ""
-echo "==> [7/8] Installing /etc/init.d/clash (FAIL-SAFE)"
-cp "$SCRIPT_DIR/clash-init.sh" /etc/init.d/clash
-chmod 755 /etc/init.d/clash
-echo "    FAIL-SAFE: TPROXY applied ONLY after Mihomo API responds"
-echo "    If Mihomo fails → internet stays direct (no blackhole)"
-
-# --- 8. Enable service ---
-echo ""
-echo "==> [8/8] Enabling clash service"
+echo "==> [6/6] Включение сервиса SSClash"
 /etc/init.d/clash enable
-echo "    clash service enabled (START=90)"
+echo "    clash service enabled (START=21)"
 
-# --- Done ---
 echo ""
 echo "=================================================="
-echo " Mihomo ${MIHOMO_VERSION} installed!"
+echo " SSClash ${SSCLASH_VERSION} установлен!"
+echo " Бинарник: /opt/clash/bin/clash"
+echo " Init.d:   /etc/init.d/clash  (START=21)"
 echo "=================================================="
 echo ""
-echo " NEXT STEP: provide your config.yaml:"
+echo " СЛЕДУЮЩИЙ ШАГ: загрузите конфиг с вашего ПК:"
 echo "   scp config.yaml root@192.168.1.1:/opt/clash/config.yaml"
 echo ""
-echo " Required fields in config.yaml:"
-echo "   tproxy-port: 7894"
-echo "   routing-mark: 2"
-echo "   external-controller: 0.0.0.0:9090"
-echo ""
-echo " Start manually:"
+echo " Запуск сервиса:"
 echo "   /etc/init.d/clash start"
 echo ""
-echo " Check logs:"
-echo "   tail -f /opt/clash/logs/mihomo.log"
-echo "   logread | grep clash"
+echo " Проверка:"
+echo "   /etc/init.d/clash status"
+echo "   ss -tlunp | grep -E '(:9090|:7894|:1053)'"
 echo ""
