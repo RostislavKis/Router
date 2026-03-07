@@ -81,34 +81,40 @@ echo "==> Restarting AdGuard Home..."
 /etc/init.d/adguardhome restart
 
 echo ""
-echo "==> Removing non-working AdGuard Home tabs from LuCI..."
-echo "    (Filters, Query Log, Settings — broken through LuCI, not needed)"
+echo "==> Removing extra AdGuard Home tabs from LuCI..."
+echo "    (Overview, Filters, Query Log, Settings — оставляем только кнопку открытия)"
 
-AGH_CTRL=""
-for path in \
-    /usr/lib/lua/luci/controller/adguardhome.lua \
-    /usr/lib/lua/luci/controller/admin/adguardhome.lua \
-    /usr/lib/lua/luci/controller/gl-adguardhome.lua; do
-    if [ -f "$path" ]; then
-        AGH_CTRL="$path"
-        break
-    fi
-done
+MENU_SRC="$(dirname "$0")/luci/menu.d/luci-app-adguardhome.json"
+MENU_DST="/usr/share/luci/menu.d/luci-app-adguardhome.json"
 
-if [ -n "$AGH_CTRL" ]; then
-    [ ! -f "${AGH_CTRL}.bak" ] && cp "$AGH_CTRL" "${AGH_CTRL}.bak"
-    sed -i \
-        -e '/["'"'"']\(filters\|query_log\|settings\)["'"'"']/s/^/--/' \
-        -e '/Filters\|Query.Log\|AdGuard.*Settings/s/^/--/' \
-        "$AGH_CTRL"
-    rm -rf /tmp/luci-*
-    /etc/init.d/rpcd restart 2>/dev/null || true
-    /etc/init.d/uhttpd restart 2>/dev/null || true
-    echo "    Tabs removed, LuCI restarted: $AGH_CTRL"
+if [ -f "$MENU_SRC" ]; then
+    cp "$MENU_SRC" "$MENU_DST"
+    chmod 644 "$MENU_DST"
+    echo "    Заменён menu.d/luci-app-adguardhome.json (только → Open Dashboard)"
 else
-    echo "    INFO: AGH LuCI controller not found, skipping"
-    echo "         Check: find /usr/lib/lua/luci -name '*adguard*'"
+    cat > "$MENU_DST" << 'MENUJSON'
+{
+	"admin/services/adguardhome": {
+		"title": "AdGuard Home",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "adguardhome/dashboard"
+		},
+		"depends": {
+			"acl": [ "luci-app-adguardhome" ]
+		}
+	}
+}
+MENUJSON
+    chmod 644 "$MENU_DST"
+    echo "    Заменён menu.d/luci-app-adguardhome.json (inline fallback)"
 fi
+
+rm -rf /tmp/luci-*
+/etc/init.d/rpcd restart 2>/dev/null || true
+/etc/init.d/uhttpd restart 2>/dev/null || true
+echo "    LuCI кэш очищен, rpcd/uhttpd перезапущены"
 
 echo ""
 echo "==> Done. Verify with:"

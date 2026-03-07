@@ -130,12 +130,19 @@ echo "    UCI config created."
 echo ""
 echo "==> [3/6] Installing LuCI page (Services > Proxy Optimizer)"
 
-# JSON menu entry
+# JSON menu entry (Proxy Optimizer)
 mkdir -p /usr/share/luci/menu.d
 cp "$SCRIPT_DIR/luci/menu.d/luci-app-cf-optimizer.json" \
    /usr/share/luci/menu.d/luci-app-cf-optimizer.json
 chmod 644 /usr/share/luci/menu.d/luci-app-cf-optimizer.json
 echo "    menu.d/luci-app-cf-optimizer.json -> /usr/share/luci/menu.d/"
+
+# Remove extra AdGuard Home LuCI tabs (Overview/Filters/QueryLog/Settings)
+# Replace with single "→ Open Dashboard" entry (opens AGH on port 3000)
+cp "$SCRIPT_DIR/luci/menu.d/luci-app-adguardhome.json" \
+   /usr/share/luci/menu.d/luci-app-adguardhome.json
+chmod 644 /usr/share/luci/menu.d/luci-app-adguardhome.json
+echo "    menu.d/luci-app-adguardhome.json  -> /usr/share/luci/menu.d/ (tabs removed)"
 
 # ACL permissions for rpcd
 mkdir -p /usr/share/rpcd/acl.d

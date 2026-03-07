@@ -43,6 +43,7 @@ setup-cf-optimizer.sh
 99-router-mem.conf
 xray-fragment.json
 luci/menu.d/luci-app-cf-optimizer.json
+luci/menu.d/luci-app-adguardhome.json
 luci/acl.d/luci-app-cf-optimizer.json
 luci/view/cf-optimizer/main.js
 "
