@@ -6,7 +6,7 @@
 #   1. Copy scripts to /usr/local/bin/
 #   2. Create /etc/config/cf_optimizer (UCI)
 #   3. Deploy LuCI page (JSON menu + ACL + JS view — for OpenWrt 26.x without Lua)
-#   4. Setup cron (latency monitor every 2h, CF IP every 6h, SNI daily)
+#   4. Setup cron (latency/watchdog/log-rotate/geo-update/cf-ip/sni)
 #   5. Apply DPI bypass nftables rule (MSS=150)
 #   6. Create init script for autostart on boot
 #
@@ -30,6 +30,7 @@ MIHOMO_SECRET=""
 MIHOMO_SOCKS="127.0.0.1:7891"
 MIHOMO_CONFIG="/opt/clash/config.yaml"
 MSS_VALUE="150"
+SWITCH_THRESHOLD="20"
 # --- Only needed if your proxies are behind Cloudflare CDN ---
 WORKER_URL="https://YOUR_WORKER.workers.dev"
 REGIONS="FI,DE,NL"
@@ -43,13 +44,19 @@ echo "==> [1/6] Copying scripts to /usr/local/bin/"
 
 mkdir -p /usr/local/bin
 
-cp "$SCRIPT_DIR/latency-monitor.sh" /usr/local/bin/latency-monitor.sh && chmod 755 /usr/local/bin/latency-monitor.sh
-cp "$SCRIPT_DIR/latency-start.sh"   /usr/local/bin/latency-start.sh   && chmod 755 /usr/local/bin/latency-start.sh
-cp "$SCRIPT_DIR/cf-ip-update.sh"    /usr/local/bin/cf-ip-update.sh    && chmod 755 /usr/local/bin/cf-ip-update.sh
-cp "$SCRIPT_DIR/sni-scan.sh"        /usr/local/bin/sni-scan.sh        && chmod 755 /usr/local/bin/sni-scan.sh
+cp "$SCRIPT_DIR/latency-monitor.sh"  /usr/local/bin/latency-monitor.sh  && chmod 755 /usr/local/bin/latency-monitor.sh
+cp "$SCRIPT_DIR/latency-start.sh"    /usr/local/bin/latency-start.sh    && chmod 755 /usr/local/bin/latency-start.sh
+cp "$SCRIPT_DIR/mihomo-watchdog.sh"  /usr/local/bin/mihomo-watchdog.sh  && chmod 755 /usr/local/bin/mihomo-watchdog.sh
+cp "$SCRIPT_DIR/log-rotate.sh"       /usr/local/bin/log-rotate.sh       && chmod 755 /usr/local/bin/log-rotate.sh
+cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod 755 /usr/local/bin/geo-update.sh
+cp "$SCRIPT_DIR/cf-ip-update.sh"     /usr/local/bin/cf-ip-update.sh     && chmod 755 /usr/local/bin/cf-ip-update.sh
+cp "$SCRIPT_DIR/sni-scan.sh"         /usr/local/bin/sni-scan.sh         && chmod 755 /usr/local/bin/sni-scan.sh
 
 echo "    latency-monitor.sh  -> /usr/local/bin/"
 echo "    latency-start.sh    -> /usr/local/bin/"
+echo "    mihomo-watchdog.sh  -> /usr/local/bin/"
+echo "    log-rotate.sh       -> /usr/local/bin/"
+echo "    geo-update.sh       -> /usr/local/bin/"
 echo "    cf-ip-update.sh     -> /usr/local/bin/"
 echo "    sni-scan.sh         -> /usr/local/bin/"
 
@@ -67,14 +74,21 @@ uci -q delete cf_optimizer.main 2>/dev/null || true
 
 uci set cf_optimizer.main=cf_optimizer
 
-# Latency monitor (enabled by default — works for any proxy type)
+# Latency monitor (enabled by default)
 uci set cf_optimizer.main.latency_enabled=1
 uci set cf_optimizer.main.gemini_group="$GEMINI_GROUP"
 uci set cf_optimizer.main.main_group="$MAIN_GROUP"
+uci set cf_optimizer.main.switch_threshold="$SWITCH_THRESHOLD"
 
-# DPI bypass (enabled by default — works for any proxy type)
+# DPI bypass (enabled by default)
 uci set cf_optimizer.main.dpi_bypass_enabled=1
 uci set cf_optimizer.main.mss_value="$MSS_VALUE"
+
+# Watchdog (enabled by default)
+uci set cf_optimizer.main.watchdog_enabled=1
+
+# Geo update (disabled by default — enable once proxy is confirmed working)
+uci set cf_optimizer.main.geo_update_enabled=0
 
 # CF IP Updater and SNI Scanner (disabled by default — only for proxies behind Cloudflare CDN)
 uci set cf_optimizer.main.ip_updater_enabled=0
@@ -137,19 +151,33 @@ CRON_FILE="/etc/crontabs/root"
 touch "$CRON_FILE"
 
 # Remove old entries if present (busybox sed: separate -e per pattern, no \| alternation)
-sed -i '/cf-ip-update/d; /sni-scan/d; /latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
+sed -i '/cf-ip-update/d' "$CRON_FILE" 2>/dev/null || true
+sed -i '/sni-scan/d'     "$CRON_FILE" 2>/dev/null || true
+sed -i '/latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
+sed -i '/mihomo-watchdog/d' "$CRON_FILE" 2>/dev/null || true
+sed -i '/log-rotate/d'   "$CRON_FILE" 2>/dev/null || true
+sed -i '/geo-update/d'   "$CRON_FILE" 2>/dev/null || true
 
 # Latency monitor: every 2 hours
 echo "0 */2 * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
+# Mihomo watchdog: every 10 minutes
+echo "*/10 * * * * /usr/local/bin/mihomo-watchdog.sh >> /var/log/mihomo-watchdog.log 2>&1" >> "$CRON_FILE"
+# Log rotation: daily at 03:00
+echo "0 3 * * * /usr/local/bin/log-rotate.sh" >> "$CRON_FILE"
+# Geo update: weekly Sunday at 04:00 (activate via LuCI when needed)
+echo "0 4 * * 0 /usr/local/bin/geo-update.sh >> /var/log/geo-update.log 2>&1" >> "$CRON_FILE"
 # CF IP update: every 6 hours (only active if ip_updater_enabled=1)
 echo "0 */6 * * * /usr/local/bin/cf-ip-update.sh >> /var/log/cf-ip-update.log 2>&1" >> "$CRON_FILE"
 # SNI scan: daily at 02:30 (only active if sni_scanner_enabled=1)
 echo "30 2 * * * /usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1" >> "$CRON_FILE"
 
 /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || true
-echo "    latency monitor: every 2h"
-echo "    CF IP update:    every 6h (activate via LuCI when needed)"
-echo "    SNI scan:        daily 02:30 (activate via LuCI when needed)"
+echo "    latency monitor:   every 2h"
+echo "    mihomo watchdog:   every 10 min"
+echo "    log rotation:      daily 03:00"
+echo "    geo update:        weekly Sun 04:00 (activate via LuCI)"
+echo "    CF IP update:      every 6h (activate via LuCI)"
+echo "    SNI scan:          daily 02:30 (activate via LuCI)"
 
 # --- 5. Apply DPI bypass nftables ---
 echo ""
@@ -174,6 +202,14 @@ START=96
 STOP=04
 
 start() {
+    local api
+    api=$(uci -q get cf_optimizer.main.mihomo_api)
+    api="${api:-http://127.0.0.1:9090}"
+
+    # Restore last known status from flash to RAM (lost on every reboot)
+    [ -f /etc/cf-optimizer.status ] && \
+        cp /etc/cf-optimizer.status /var/run/latency-monitor.status 2>/dev/null || true
+
     # DPI bypass
     local dpi_enabled
     dpi_enabled=$(uci -q get cf_optimizer.main.dpi_bypass_enabled)
@@ -182,20 +218,28 @@ start() {
         logger -t cf-optimizer "DPI bypass rules applied"
     fi
 
-    # Latency monitor (30s delay to let Mihomo start first)
+    # Latency monitor — wait for Mihomo API instead of blind sleep
     local lat_enabled
     lat_enabled=$(uci -q get cf_optimizer.main.latency_enabled)
     if [ "$lat_enabled" = "1" ]; then
-        (sleep 30 && /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1) &
-        logger -t cf-optimizer "Latency monitor scheduled (30s delay)"
+        (
+            waited=0
+            while ! curl -sf --max-time 3 "${api}/version" >/dev/null 2>&1; do
+                [ $waited -ge 120 ] && break
+                sleep 5
+                waited=$((waited + 5))
+            done
+            /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1
+        ) &
+        logger -t cf-optimizer "Latency monitor will run after Mihomo API ready"
     fi
 
-    # CF IP updater
+    # CF IP updater (90s delay — after latency monitor starts)
     local ip_enabled
     ip_enabled=$(uci -q get cf_optimizer.main.ip_updater_enabled)
     if [ "$ip_enabled" = "1" ]; then
-        (sleep 60 && /usr/local/bin/cf-ip-update.sh >> /var/log/cf-ip-update.log 2>&1) &
-        logger -t cf-optimizer "IP updater scheduled (60s delay)"
+        (sleep 90 && /usr/local/bin/cf-ip-update.sh >> /var/log/cf-ip-update.log 2>&1) &
+        logger -t cf-optimizer "IP updater scheduled (90s delay)"
     fi
 }
 
@@ -223,16 +267,20 @@ echo ""
 echo " LuCI: Services > CF IP Optimizer"
 echo ""
 echo " Что включено по умолчанию:"
-echo "   [ON]  Latency Monitor  — переключает GEMINI каждые 2 часа"
+echo "   [ON]  Latency Monitor  — переключает GEMINI каждые 2 часа (гистерезис ${SWITCH_THRESHOLD}%)"
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
+echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"
+echo "   [OFF] Geo Update       — обновление geoip/geosite (включить после проверки)"
 echo "   [OFF] CF IP Updater    — включить если прокси за Cloudflare CDN"
 echo "   [OFF] SNI Scanner      — включить если прокси за Cloudflare CDN"
 echo ""
 echo " Логи:"
 echo "   Latency monitor: tail -f /var/log/latency-monitor.log"
-echo "   IP updater:      tail -f /var/log/cf-ip-update.log"
-echo "   Syslog:          logread | grep latency-monitor"
+echo "   Watchdog:        tail -f /var/log/mihomo-watchdog.log"
+echo "   Syslog:          logread | grep cf-optimizer"
 echo ""
 echo " Проверить GEMINI:"
 echo "   cat /var/run/latency-monitor.status"
+echo " Проверить watchdog:"
+echo "   cat /var/run/mihomo-watchdog.status"
 echo ""

@@ -5,6 +5,7 @@
 			"uci": [ "cf_optimizer" ],
 			"file": {
 				"/var/run/latency-monitor.status": [ "read" ],
+				"/var/run/mihomo-watchdog.status": [ "read" ],
 				"/var/run/cf-optimizer.status": [ "read" ],
 				"/var/log/latency-monitor.log": [ "read" ]
 			},

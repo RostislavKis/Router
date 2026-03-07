@@ -6,21 +6,25 @@
 #   - Tests ONLY proxies that belong to the GEMINI selector
 #   - Reads proxy list from Mihomo API — no hardcoding
 #   - Switches to the fastest one via PUT /proxies/{group}
+#   - Hysteresis: only switches if new proxy is faster by switch_threshold% or more
 #   - Runs independently, never touches other groups
 #
 # PrvtVPN All Auto (url-test group):
 #   - Mihomo auto-manages it — we only read and log current selection
 #
-# Gentle mode: 1s pause between proxy tests, lock file prevents parallel runs.
+# Persistent status: saved to /etc/cf-optimizer.status (flash) on each switch.
+# On boot, init script restores it to /var/run/ so LuCI shows last known state.
 #
-# Настройка UCI:
+# UCI settings:
 #   uci set cf_optimizer.main.latency_enabled=1
+#   uci set cf_optimizer.main.switch_threshold=20   # % below which we skip switch
 #   uci set cf_optimizer.main.gemini_group='🤖 GEMINI'
 #   uci set cf_optimizer.main.main_group='PrvtVPN All Auto'
 #   uci commit cf_optimizer
 
 LOG_TAG="latency-monitor"
 STATUS_FILE="/var/run/latency-monitor.status"
+PERSISTENT_STATUS="/etc/cf-optimizer.status"
 LOCK_FILE="/var/run/latency-monitor.lock"
 
 # --- UCI config ---
@@ -31,10 +35,12 @@ MIHOMO_API=$(uci -q get cf_optimizer.main.mihomo_api)
 MIHOMO_SECRET=$(uci -q get cf_optimizer.main.mihomo_secret)
 GEMINI_GROUP=$(uci -q get cf_optimizer.main.gemini_group)
 MAIN_GROUP=$(uci -q get cf_optimizer.main.main_group)
+SWITCH_THRESHOLD=$(uci -q get cf_optimizer.main.switch_threshold)
 
 MIHOMO_API="${MIHOMO_API:-http://127.0.0.1:9090}"
 GEMINI_GROUP="${GEMINI_GROUP:-🤖 GEMINI}"
 MAIN_GROUP="${MAIN_GROUP:-PrvtVPN All Auto}"
+SWITCH_THRESHOLD="${SWITCH_THRESHOLD:-20}"
 
 # --- Lock ---
 if [ -f "$LOCK_FILE" ]; then
@@ -129,21 +135,16 @@ get_group_proxies() {
     [ -z "$info" ] && return 1
 
     # Extract the "all":["name1","name2",...] array
-    # Using awk to split on the array boundaries
     echo "$info" | awk '
         BEGIN { RS=""; FS="" }
         {
-            # Find "all":[ ... ]
             if (match($0, /"all":\[[^]]*\]/)) {
                 chunk = substr($0, RSTART, RLENGTH)
-                # Remove "all":[ and trailing ]
                 sub(/"all":\[/, "", chunk)
                 sub(/\].*/, "", chunk)
-                # Split by "," boundary between quoted strings
                 n = split(chunk, parts, /","/)
                 for (i = 1; i <= n; i++) {
                     name = parts[i]
-                    # Strip surrounding quotes
                     gsub(/^[[:space:]]*"?/, "", name)
                     gsub(/"?[[:space:]]*$/, "", name)
                     if (length(name) > 0) print name
@@ -180,7 +181,6 @@ switch_group() {
     local encoded_group
     encoded_group=$(urlencode "$group_name")
 
-    # Escape proxy name for JSON string value
     local escaped
     escaped=$(printf '%s' "$proxy_name" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
@@ -188,10 +188,15 @@ switch_group() {
 }
 
 # ================================================================
-# BLOCK A: GEMINI group — test & switch independently
+# BLOCK A: GEMINI group — test & switch with hysteresis
+# ================================================================
+# Hysteresis prevents unnecessary proxy switches for Gemini/NotebookLM.
+# A switch happens only when the best proxy is faster than the current
+# proxy by at least SWITCH_THRESHOLD percent.
+# Example: current=150ms, threshold=20% → switch only if best < 120ms.
 # ================================================================
 optimize_gemini() {
-    logger -t "$LOG_TAG" "=== GEMINI group: ${GEMINI_GROUP} ==="
+    logger -t "$LOG_TAG" "=== GEMINI group: ${GEMINI_GROUP} (threshold=${SWITCH_THRESHOLD}%) ==="
 
     # Get proxy list from Mihomo API (not hardcoded)
     local proxies
@@ -203,12 +208,18 @@ optimize_gemini() {
         return 1
     fi
 
+    # Read current active proxy before testing
+    local current_proxy
+    current_proxy=$(get_group_current "$GEMINI_GROUP")
+    logger -t "$LOG_TAG" "GEMINI: current='${current_proxy:-none}'"
+
     local proxy_count
     proxy_count=$(echo "$proxies" | wc -l)
     logger -t "$LOG_TAG" "GEMINI: testing ${proxy_count} proxies"
 
     local best_proxy=""
     local best_delay=9999
+    local current_delay=9999
     local tested=0
 
     while IFS= read -r proxy; do
@@ -220,33 +231,71 @@ optimize_gemini() {
 
         logger -t "$LOG_TAG" "  [GEMINI] $(printf '%-50s' "$proxy") ${delay}ms"
 
+        # Track current proxy delay separately
+        [ "$proxy" = "$current_proxy" ] && current_delay=$delay
+
         if [ "$delay" -lt "$best_delay" ] 2>/dev/null; then
             best_delay=$delay
             best_proxy=$proxy
         fi
 
-        # Gentle: pause between tests (no flooding)
         sleep 1
     done << PROXYEOF
 $proxies
 PROXYEOF
 
-    logger -t "$LOG_TAG" "GEMINI: tested ${tested} proxies"
+    logger -t "$LOG_TAG" "GEMINI: tested=${tested}, best='${best_proxy}'(${best_delay}ms), current='${current_proxy}'(${current_delay}ms)"
 
-    if [ -n "$best_proxy" ] && [ "$best_delay" -lt 9000 ] 2>/dev/null; then
-        local api_result
-        api_result=$(switch_group "$GEMINI_GROUP" "$best_proxy")
+    if [ -z "$best_proxy" ] || [ "$best_delay" -ge 9000 ] 2>/dev/null; then
+        logger -t "$LOG_TAG" "GEMINI: no reachable proxy found (all timed out)"
+        echo "GEMINI_STATUS=all_timeout" >> "$STATUS_FILE"
+        return
+    fi
 
-        logger -t "$LOG_TAG" "GEMINI: switched to '${best_proxy}' (${best_delay}ms) [API: ${api_result}]"
-
+    if [ "$best_proxy" = "$current_proxy" ]; then
+        # Already on the best proxy — no switch needed
+        logger -t "$LOG_TAG" "GEMINI: already optimal, keeping '${best_proxy}' (${best_delay}ms)"
         {
             echo "GEMINI_PROXY=${best_proxy}"
             echo "GEMINI_DELAY=${best_delay}ms"
             echo "GEMINI_STATUS=ok"
         } >> "$STATUS_FILE"
+        return
+    fi
+
+    # Hysteresis check: only switch if best is faster by >= SWITCH_THRESHOLD%
+    # threshold_delay = current_delay * (100 - threshold) / 100
+    local threshold_delay
+    if [ "$current_delay" -lt 9000 ] 2>/dev/null; then
+        threshold_delay=$(awk "BEGIN { printf \"%d\", $current_delay * (100 - $SWITCH_THRESHOLD) / 100 }")
+        logger -t "$LOG_TAG" "GEMINI: switch threshold = ${threshold_delay}ms (${SWITCH_THRESHOLD}% below ${current_delay}ms)"
     else
-        logger -t "$LOG_TAG" "GEMINI: no reachable proxy found (all timed out)"
-        echo "GEMINI_STATUS=all_timeout" >> "$STATUS_FILE"
+        # Current proxy is unreachable — always switch to best
+        threshold_delay=9999
+        logger -t "$LOG_TAG" "GEMINI: current proxy unreachable, switching unconditionally"
+    fi
+
+    if [ "$best_delay" -lt "$threshold_delay" ] 2>/dev/null; then
+        local saved=$((current_delay - best_delay))
+        local api_result
+        api_result=$(switch_group "$GEMINI_GROUP" "$best_proxy")
+        logger -t "$LOG_TAG" "GEMINI: switched '${current_proxy}'→'${best_proxy}' (-${saved}ms) [API: ${api_result}]"
+        {
+            echo "GEMINI_PROXY=${best_proxy}"
+            echo "GEMINI_DELAY=${best_delay}ms"
+            echo "GEMINI_STATUS=ok"
+            echo "GEMINI_SWITCHED=1"
+        } >> "$STATUS_FILE"
+        # Persist to flash only on actual switch
+        cp "$STATUS_FILE" "$PERSISTENT_STATUS" 2>/dev/null || true
+    else
+        # Improvement below threshold — keep current proxy
+        logger -t "$LOG_TAG" "GEMINI: keeping '${current_proxy}' (${current_delay}ms) — '${best_proxy}' (${best_delay}ms) not ${SWITCH_THRESHOLD}%+ better"
+        {
+            echo "GEMINI_PROXY=${current_proxy:-${best_proxy}}"
+            echo "GEMINI_DELAY=${current_delay}ms"
+            echo "GEMINI_STATUS=ok"
+        } >> "$STATUS_FILE"
     fi
 }
 
@@ -278,7 +327,7 @@ check_main() {
 # ================================================================
 # Run
 # ================================================================
-logger -t "$LOG_TAG" "Starting latency monitor"
+logger -t "$LOG_TAG" "Starting latency monitor (threshold=${SWITCH_THRESHOLD}%)"
 
 {
     echo "LAST_RUN=$(date '+%Y-%m-%d %H:%M:%S')"

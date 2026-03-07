@@ -15,16 +15,27 @@ function parseStatus(text) {
 
 return view.extend({
 	load: function() {
-		return fs.read('/var/run/latency-monitor.status').catch(function() { return ''; });
+		return Promise.all([
+			fs.read('/var/run/latency-monitor.status').catch(function() { return ''; }),
+			fs.read('/var/run/mihomo-watchdog.status').catch(function() { return ''; })
+		]);
 	},
 
-	render: function(content) {
-		const lat = parseStatus(content);
-		const geminiOk = lat['GEMINI_STATUS'] === 'ok';
-		const hasRun   = !!lat['LAST_RUN'];
+	render: function(data) {
+		const lat = parseStatus(data[0]);
+		const wd  = parseStatus(data[1]);
 
-		/* ── Карточка статуса ── */
-		const statusCard = E('div', { 'class': 'cbi-section' }, [
+		const geminiOk  = lat['GEMINI_STATUS'] === 'ok';
+		const hasRun    = !!lat['LAST_RUN'];
+		const wdStatus  = wd['WATCHDOG_STATUS'] || '';
+		const wdColor   = wdStatus === 'healthy' || wdStatus === 'recovered' ? '#4caf50'
+		                : wdStatus === 'warning'    ? '#ff9800'
+		                : wdStatus === 'failed'     ? '#f44336'
+		                : wdStatus === 'restarting' ? '#ff9800'
+		                : '#9e9e9e';
+
+		/* ── Latency Monitor card ── */
+		const latCard = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Latency Monitor — статус')),
 			E('table', { 'class': 'table', 'style': 'width:100%;margin-bottom:10px' }, [
 				E('tr', { 'class': 'tr cbi-rowstyle-1' }, [
@@ -63,6 +74,28 @@ return view.extend({
 			}, '▶ ' + _('Запустить мониторинг сейчас'))
 		]);
 
+		/* ── Watchdog card ── */
+		const wdCard = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, _('Mihomo Watchdog — статус')),
+			E('table', { 'class': 'table', 'style': 'width:100%;margin-bottom:10px' }, [
+				E('tr', { 'class': 'tr cbi-rowstyle-1' }, [
+					E('td', { 'class': 'td', 'style': 'width:200px;font-weight:bold' }, _('Последняя проверка')),
+					E('td', { 'class': 'td' }, wd['WATCHDOG_LAST_CHECK'] || _('Ещё не запускался'))
+				]),
+				E('tr', { 'class': 'tr cbi-rowstyle-2' }, [
+					E('td', { 'class': 'td', 'style': 'font-weight:bold' }, _('Состояние')),
+					E('td', { 'class': 'td' }, [
+						E('span', { 'style': 'font-weight:bold;color:' + wdColor },
+							wdStatus || _('—'))
+					])
+				]),
+				E('tr', { 'class': 'tr cbi-rowstyle-1' }, [
+					E('td', { 'class': 'td', 'style': 'font-weight:bold' }, _('Сбоев подряд')),
+					E('td', { 'class': 'td' }, wd['WATCHDOG_FAILS'] || '0')
+				])
+			])
+		]);
+
 		/* ── UCI форма ── */
 		const m = new form.Map('cf_optimizer', _('CF IP Optimizer'),
 			_('Управление оптимизаторами прокси для Mihomo.'));
@@ -80,6 +113,12 @@ return view.extend({
 
 		s.option(form.Flag, 'dpi_bypass_enabled', _('DPI Bypass (nftables MSS)'),
 			_('Разбивать TLS ClientHello. Только трафик Mihomo (mark=2), порты 443/2053/2083/2087/2096'));
+
+		s.option(form.Flag, 'watchdog_enabled', _('Mihomo Watchdog'),
+			_('Перезапускать Mihomo если API не отвечает 2 проверки подряд (каждые 10 мин)'));
+
+		s.option(form.Flag, 'geo_update_enabled', _('Geo Update'),
+			_('Обновлять geoip.dat / geosite.dat / country.mmdb раз в неделю (воскресенье 04:00)'));
 
 		s.option(form.Flag, 'ip_updater_enabled', _('CF IP Updater'),
 			_('Только если прокси стоят за Cloudflare CDN'));
@@ -101,6 +140,11 @@ return view.extend({
 		o.placeholder = 'PrvtVPN All Auto';
 		o.description = _('url-test группа — только мониторинг, Mihomo управляет ей сам');
 
+		o = s.option(form.Value, 'switch_threshold', _('Порог переключения GEMINI (%)'));
+		o.placeholder = '20';
+		o.datatype = 'range(0, 50)';
+		o.description = _('Переключить GEMINI только если новый прокси быстрее текущего на X%. 0 = всегда, 20 = рекомендуется');
+
 		o = s.option(form.Value, 'mss_value', _('MSS Value (DPI bypass)'));
 		o.placeholder = '150';
 		o.datatype = 'range(40, 1460)';
@@ -114,7 +158,7 @@ return view.extend({
 		o.placeholder = 'FI,DE,NL';
 		o.description = _('Коды стран через запятую');
 
-		o = s.option(form.Value, 'update_threshold', _('Порог обновления (%)'));
+		o = s.option(form.Value, 'update_threshold', _('Порог обновления IP (%)'));
 		o.placeholder = '20';
 		o.datatype = 'range(1, 100)';
 		o.description = _('Обновлять IP только если новый быстрее на X%');
@@ -135,7 +179,7 @@ return view.extend({
 		o.placeholder = '127.0.0.1:7891';
 
 		return m.render().then(function(mapEl) {
-			return E('div', {}, [statusCard, mapEl]);
+			return E('div', {}, [latCard, wdCard, mapEl]);
 		});
 	},
 
