@@ -2,6 +2,7 @@
 'require view';
 'require fs';
 'require ui';
+'require poll';
 
 function parseStatus(text) {
 	const s = {};
@@ -49,6 +50,11 @@ return view.extend({
 		                  : xrStatus === 'failed'        ? '#f44336'
 		                  : '#ff9800';
 
+		/* ── Live log pre element (shared between card and poll) ── */
+		const logPre = E('pre', {
+			'style': 'background:#111;color:#0f0;padding:10px;max-height:220px;overflow-y:auto;font-size:0.85em;margin:0;white-space:pre-wrap;word-break:break-all;border-radius:4px'
+		}, data[0].trim() || _('(мониторинг ещё не запускался)'));
+
 		/* ── CARD 1: Latency Monitor ── */
 		const latCard = E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, _('Latency Monitor — статус')),
@@ -81,20 +87,22 @@ return view.extend({
 					var prevLastRun = lat['LAST_RUN'] || '';
 					return fs.exec('/usr/local/bin/latency-start.sh', []).then(function() {
 						ui.addNotification(null, E('p',
-							_('Latency monitor запущен. Страница обновится автоматически (~1 мин.).')),
+							_('Latency monitor запущен. Страница обновится автоматически.')),
 							'info');
-						var poll = window.setInterval(function() {
+						/* Poll every 3s until monitor finishes (MAIN_PROXY appears with new LAST_RUN) */
+						var checkId = window.setInterval(function() {
 							fs.read('/var/run/latency-monitor.status').catch(function() { return ''; }).then(function(txt) {
+								logPre.textContent = txt.trim() || _('(ожидание данных...)');
 								var s = parseStatus(txt);
-								if (s['LAST_RUN'] && s['LAST_RUN'] !== prevLastRun) {
-									window.clearInterval(poll);
-									// Monitor writes LAST_RUN first, then proxy data (~12s later).
-									// Wait 20s before reload so all fields are written.
-									window.setTimeout(function() { window.location.reload(); }, 20000);
+								var newRun   = s['LAST_RUN'] && s['LAST_RUN'] !== prevLastRun;
+								var finished = s['MAIN_PROXY'] || s['GEMINI_STATUS'] === 'api_error' || s['GEMINI_STATUS'] === 'all_timeout';
+								if (newRun && finished) {
+									window.clearInterval(checkId);
+									window.location.reload();
 								}
 							});
-						}, 10000);
-						window.setTimeout(function() { window.clearInterval(poll); }, 180000);
+						}, 3000);
+						window.setTimeout(function() { window.clearInterval(checkId); }, 180000);
 					}).catch(function(err) {
 						ui.addNotification(null, E('p', _('Ошибка: ') + err.message), 'error');
 					});
@@ -202,7 +210,20 @@ return view.extend({
 			E('div', {}, xrButtons)
 		]);
 
-		return E('div', {}, [latCard, wdCard, xrCard]);
+		/* ── CARD 4: Live log ── */
+		const logCard = E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, _('Latency Monitor — статус файл (live)')),
+			logPre
+		]);
+
+		/* ── Auto-refresh logPre every 5s via LuCI poll ── */
+		poll.add(function() {
+			return fs.read('/var/run/latency-monitor.status').catch(function() { return ''; }).then(function(txt) {
+				logPre.textContent = txt.trim() || _('(мониторинг ещё не запускался)');
+			});
+		}, 5);
+
+		return E('div', {}, [latCard, wdCard, xrCard, logCard]);
 	},
 
 	handleSave: null,
