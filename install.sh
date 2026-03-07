@@ -38,7 +38,11 @@ xray-install.sh
 xray-apply-config.sh
 cf-ip-update.sh
 sni-scan.sh
+setup-clash.sh
 setup-cf-optimizer.sh
+setup-adguardhome.sh
+clash-tproxy.nft
+clash-init.sh
 99-cf-dpi-bypass.nft
 99-router-mem.conf
 xray-fragment.json
@@ -101,13 +105,24 @@ for f in $FILES; do
     fi
 done
 
-# ── Запуск установщика ────────────────────────────────────────────────────
+# ── Запуск установщиков ───────────────────────────────────────────────────
 echo ""
-echo "==> Запуск setup-cf-optimizer.sh..."
+echo "==> [1/2] Запуск setup-clash.sh (Mihomo + TPROXY fail-safe)..."
 echo ""
+chmod +x "$DEST/setup-clash.sh" "$DEST/clash-init.sh"
+"$DEST/setup-clash.sh"
 
+echo ""
+echo "==> [2/2] Запуск setup-cf-optimizer.sh (Proxy Optimizer)..."
+echo ""
 chmod +x "$DEST/setup-cf-optimizer.sh"
 "$DEST/setup-cf-optimizer.sh"
+
+echo ""
+echo "==> [3/3] Запуск setup-adguardhome.sh (AGH DNS + credentials)..."
+echo ""
+chmod +x "$DEST/setup-adguardhome.sh"
+"$DEST/setup-adguardhome.sh"
 
 # ── Чистка ───────────────────────────────────────────────────────────────
 rm -rf "$DEST"

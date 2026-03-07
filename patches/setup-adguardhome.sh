@@ -18,7 +18,7 @@
 
 set -e
 
-AGH_CONFIG="/etc/adguardhome/adguardhome.yaml"
+AGH_CONFIG="/etc/adguardhome/config.yaml"
 
 # ============================================================
 # CONFIGURE YOUR LOGIN AND PASSWORD BELOW
@@ -29,6 +29,25 @@ AGH_USER="root"
 AGH_PASSWORD_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 # ============================================================
 
+# --- Pre-step: fix dnsmasq port conflict and UCI config path ---
+echo "==> Pre-step: disable dnsmasq on port 53 (AGH takes port 53)"
+uci set dhcp.@dnsmasq[0].port='0'
+echo "    dnsmasq port=0 (DNS disabled, DHCP only)"
+
+echo "==> Pre-step: force DHCP clients to use router as DNS (192.168.1.1 = AGH)"
+# Without this, dnsmasq with port=0 gives clients the ISP DNS instead of AGH
+uci -q delete dhcp.lan.dhcp_option 2>/dev/null || true
+uci add_list dhcp.lan.dhcp_option='6,192.168.1.1'
+uci commit dhcp
+/etc/init.d/dnsmasq restart 2>/dev/null || true
+echo "    dhcp_option 6,192.168.1.1 set — clients will use AGH for DNS"
+
+echo "==> Pre-step: point UCI adguardhome to config.yaml"
+uci set adguardhome.config.config_file="$AGH_CONFIG"
+uci commit adguardhome
+echo "    adguardhome.config.config_file=$AGH_CONFIG"
+
+echo ""
 echo "==> Patching AdGuard Home config: $AGH_CONFIG"
 
 if [ ! -f "$AGH_CONFIG" ]; then

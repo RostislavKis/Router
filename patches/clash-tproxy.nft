@@ -1,0 +1,59 @@
+#!/usr/sbin/nft -f
+# Mihomo TPROXY rules for OpenWrt
+# Applied by /etc/init.d/clash ONLY after Mihomo API responds.
+# If Mihomo is not running — this file is NOT loaded → internet works directly.
+
+define TPROXY_PORT    = 7894
+define TPROXY_MARK    = 1
+define BYPASS_MARK    = 2
+
+# Private/reserved ranges — bypass TPROXY (stay direct)
+# NOTE: 198.18.0.0/15 (fake-ip pool) is intentionally NOT excluded — must go through Mihomo
+define PRIVATE_RANGES = {
+    0.0.0.0/8,
+    10.0.0.0/8,
+    100.64.0.0/10,
+    127.0.0.0/8,
+    169.254.0.0/16,
+    172.16.0.0/12,
+    192.0.0.0/24,
+    192.168.0.0/16,
+    198.51.100.0/24,
+    203.0.113.0/24,
+    224.0.0.0/4,
+    240.0.0.0/4
+}
+
+table inet clash_tproxy {
+    chain prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+
+        # LAN traffic only (ignore WAN input)
+        iifname != "br-lan" return
+
+        # Bypass Mihomo's own traffic (routing-mark: 2 in config.yaml)
+        meta mark $BYPASS_MARK return
+
+        # Skip private/reserved destinations
+        ip daddr $PRIVATE_RANGES return
+
+        # TPROXY TCP + UDP → Mihomo (use 'tproxy ip' in inet table)
+        meta l4proto { tcp, udp } tproxy ip to 127.0.0.1:$TPROXY_PORT meta mark set $TPROXY_MARK
+    }
+
+    chain output {
+        type route hook output priority mangle; policy accept;
+
+        # Skip loopback
+        oif "lo" return
+
+        # Bypass Mihomo's own traffic
+        meta mark $BYPASS_MARK return
+
+        # Skip private/reserved destinations
+        ip daddr $PRIVATE_RANGES return
+
+        # Mark router's own outbound traffic for TPROXY routing
+        meta l4proto { tcp, udp } meta mark set $TPROXY_MARK
+    }
+}

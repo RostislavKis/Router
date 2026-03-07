@@ -32,6 +32,11 @@ OLD_5G_HT=$(uci -q get wireless.radio1.htmode  2>/dev/null || echo "?")
 
 echo "    Before: 2.4GHz ch${OLD_2G_CH} ${OLD_2G_HT}  |  5GHz ch${OLD_5G_CH} ${OLD_5G_HT}"
 
+# ---- Enable SSIDs (may be disabled after factory reset) ----
+for iface in $(uci show wireless | grep '\.disabled=' | cut -d. -f2 | grep -v '^radio'); do
+    uci set wireless.${iface}.disabled='0'
+done
+
 # ---- 2.4GHz (radio0) ----
 uci set wireless.radio0.country='BO'
 uci set wireless.radio0.channel='6'
