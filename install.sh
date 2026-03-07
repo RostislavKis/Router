@@ -47,6 +47,7 @@ luci/menu.d/luci-app-adguardhome.json
 luci/acl.d/luci-app-cf-optimizer.json
 luci/view/cf-optimizer/main.js
 luci/view/adguardhome/dashboard.js
+wifi-optimize.sh
 "
 
 echo "==> Proxy Optimizer — install.sh"

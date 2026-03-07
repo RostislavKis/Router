@@ -56,6 +56,7 @@ cp "$SCRIPT_DIR/xray-install.sh"      /usr/local/bin/xray-install.sh      && chm
 cp "$SCRIPT_DIR/xray-apply-config.sh" /usr/local/bin/xray-apply-config.sh && chmod 755 /usr/local/bin/xray-apply-config.sh
 cp "$SCRIPT_DIR/cf-ip-update.sh"     /usr/local/bin/cf-ip-update.sh     && chmod 755 /usr/local/bin/cf-ip-update.sh
 cp "$SCRIPT_DIR/sni-scan.sh"         /usr/local/bin/sni-scan.sh         && chmod 755 /usr/local/bin/sni-scan.sh
+cp "$SCRIPT_DIR/wifi-optimize.sh"    /usr/local/bin/wifi-optimize.sh    && chmod 755 /usr/local/bin/wifi-optimize.sh
 
 echo "    latency-monitor.sh  -> /usr/local/bin/"
 echo "    latency-start.sh    -> /usr/local/bin/"
@@ -66,6 +67,7 @@ echo "    xray-control.sh     -> /usr/local/bin/"
 echo "    xray-install.sh     -> /usr/local/bin/"
 echo "    cf-ip-update.sh     -> /usr/local/bin/"
 echo "    sni-scan.sh         -> /usr/local/bin/"
+echo "    wifi-optimize.sh    -> /usr/local/bin/"
 
 mkdir -p /etc/nftables.d
 cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/nftables.d/99-cf-dpi-bypass.nft
