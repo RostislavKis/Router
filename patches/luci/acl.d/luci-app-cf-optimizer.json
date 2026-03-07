@@ -2,23 +2,21 @@
 	"luci-app-cf-optimizer": {
 		"description": "Grant access to CF IP Optimizer",
 		"read": {
+			"uci": [ "cf_optimizer" ],
 			"file": {
 				"/var/run/latency-monitor.status": [ "read" ],
 				"/var/run/cf-optimizer.status": [ "read" ],
 				"/var/log/latency-monitor.log": [ "read" ]
 			},
 			"ubus": {
-				"uci": [ "get" ],
 				"service": [ "list" ]
 			}
 		},
 		"write": {
+			"uci": [ "cf_optimizer" ],
 			"file": {
 				"/usr/local/bin/latency-start.sh": [ "exec" ],
 				"/usr/local/bin/cf-ip-update.sh": [ "exec" ]
-			},
-			"ubus": {
-				"uci": [ "set", "commit" ]
 			}
 		}
 	}
