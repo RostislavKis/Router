@@ -657,6 +657,24 @@ authentication:
 - `+.github.com`, `+.github.io`, `+.githubusercontent.com` — скачивание geo-баз, Xray
 - `+.adaway.org` — AGH фильтр-листы
 - `+.flowlayer.app` — локальный сервис Cursor IDE (резолвится в 127.0.0.1)
+- `*.pool.ntp.org`, `time.google.com`, `time.cloudflare.com` — NTP-серверы роутера (см. ниже)
+
+### NTP и защита от Boot Loop
+
+ntpd роутера запускается от uid `ntp` (не root) и **не обходит TPROXY**. Если NTP-домен попадает в fake-ip, то синхронизация времени начинает зависеть от работоспособности VPN-прокси. Это создаёт потенциальную взаимную блокировку при cold boot:
+
+```text
+Время сбито → TLS прокси не проходит валидацию → прокси не поднимается → NTP не синхронизируется
+```
+
+**Решение:** NTP-серверы в `/etc/config/system` настроены на домены, которые уже есть в `fake-ip-filter` и разрешаются в реальные IP напрямую:
+
+```sh
+uci show system.ntp
+# system.ntp.server='0.pool.ntp.org' '1.pool.ntp.org' 'time.google.com' 'time.cloudflare.com'
+```
+
+**Правило:** никогда не ставить NTP-серверы вида `*.openwrt.pool.ntp.org` — `*.pool.ntp.org` в fake-ip-filter покрывает только один уровень поддомена и не матчит `openwrt.pool.ntp.org`.
 
 ---
 
