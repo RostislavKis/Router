@@ -70,11 +70,14 @@ echo "    sni-scan.sh         -> /usr/local/bin/"
 echo "    wifi-optimize.sh    -> /usr/local/bin/"
 
 mkdir -p /etc/cf-optimizer
-cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/cf-optimizer/99-cf-dpi-bypass.nft
+cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft"    /etc/cf-optimizer/99-cf-dpi-bypass.nft
 chmod 644 /etc/cf-optimizer/99-cf-dpi-bypass.nft
-echo "    99-cf-dpi-bypass.nft -> /etc/cf-optimizer/"
-# IMPORTANT: do NOT put this file in /etc/nftables.d/ - fw4 includes that dir
-# inside inet fw4 table context; our file defines a separate table which breaks fw4.
+echo "    99-cf-dpi-bypass.nft  -> /etc/cf-optimizer/"
+cp "$SCRIPT_DIR/98-telegram-tproxy.nft"  /etc/cf-optimizer/98-telegram-tproxy.nft
+chmod 644 /etc/cf-optimizer/98-telegram-tproxy.nft
+echo "    98-telegram-tproxy.nft -> /etc/cf-optimizer/"
+# IMPORTANT: do NOT put these files in /etc/nftables.d/ - fw4 includes that dir
+# inside inet fw4 table context; our files define separate tables which break fw4.
 
 mkdir -p /etc/sysctl.d
 cp "$SCRIPT_DIR/99-router-mem.conf" /etc/sysctl.d/99-router-mem.conf
@@ -275,7 +278,7 @@ start() {
         logger -t cf-optimizer "DPI bypass (nftables MSS) applied"
     fi
 
-    # Wait for Mihomo API, then run latency monitor and optional Xray
+    # Wait for Mihomo API, then apply Telegram TPROXY, latency monitor, optional Xray
     (
         waited=0
         while ! curl -sf --max-time 3 "${api}/version" >/dev/null 2>&1; do
@@ -283,6 +286,15 @@ start() {
             sleep 5
             waited=$((waited + 5))
         done
+
+        # Telegram MTProto TPROXY: mark real Telegram IPs for TPROXY interception.
+        # Applied AFTER Mihomo is confirmed running so :7894 is ready to handle packets.
+        # inet clash proxy chain (priority -100) TPROXY's mark=0x1 to :7894.
+        # Mihomo applies IP-CIDR rules: Telegram IPs -> TELEGRAM group (AWG proxy).
+        nft delete table inet telegram_tproxy 2>/dev/null || true
+        nft -f /etc/cf-optimizer/98-telegram-tproxy.nft 2>/dev/null && \
+            logger -t cf-optimizer "Telegram TPROXY rules applied" || \
+            logger -t cf-optimizer "Telegram TPROXY rules FAILED"
 
         # Latency monitor
         local lat_enabled
@@ -315,9 +327,12 @@ start() {
 }
 
 stop() {
+    # Remove Telegram TPROXY rules
+    nft delete table inet telegram_tproxy 2>/dev/null || true
+
     # Remove nftables DPI bypass
     nft delete table inet cf_dpi_bypass 2>/dev/null || true
-    logger -t cf-optimizer "DPI bypass (nftables) removed"
+    logger -t cf-optimizer "nftables tables removed"
 
     # Stop Xray if running
     /usr/local/bin/xray-control.sh stop 2>/dev/null || true
