@@ -175,6 +175,7 @@ dns:
     - 'miwifi.com'
     - '*.miwifi.com'
     - 'my.router'
+    - '+.flowlayer.app'
     - 'pool.ntp.org'
     - '*.pool.ntp.org'
     - 'time.google.com'

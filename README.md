@@ -13,23 +13,30 @@
     ▼
 AdGuard Home :53  (блокировка рекламы, фильтрация)
     │
-    │ upstream DNS
+    │ upstream DNS → 127.0.0.1:1053
     ▼
-Mihomo DNS :1053  (fake-ip mode)
+Mihomo DNS :1053  (fake-ip mode, 198.18.0.0/16)
     │
-    │ DoH (Cloudflare / Google / Quad9)
+    │ DoH → https://dns.google / dns.nextdns.io / dns.quad9.net
     ▼
 Интернет
 
+
 Клиент (TCP/UDP трафик)
     │
-    │ TPROXY — nftables перехватывает весь трафик
-    ▼
-Mihomo :7894  (правила из config.yaml)
+    ├── Telegram MTProto IPs (149.154.x.x / 91.108.x.x)
+    │       ↓ inet telegram_tproxy (priority -200): mark=0x1
+    │       ↓ inet clash proxy (TPROXY) → Mihomo :7894
+    │       ↓ RuleSet(telegram) → ✈️ TELEGRAM [AWG proxy]
     │
-    ├──► DIRECT  (Россия: .ru, .рф, .su, банки, госсайты)
-    ├──► PROXY   (заблокированные: Google, YouTube, Gemini, etc.)
-    └──► REJECT  (реклама, трекеры)
+    └── Всё остальное
+            ↓ inet clash CLASH_MARK: fake-ip 198.18.x.x → mark=0x1
+            ↓ inet clash proxy (TPROXY) → Mihomo :7894
+            ↓ правила из config.yaml:
+                ├──► DIRECT  (Россия: .ru, .рф, .su, банки, госсайты)
+                ├──► GEMINI  (Gemini AI / NotebookLM — latency-monitor управляет)
+                ├──► PROXY   (заблокированные: Google, YouTube, etc.)
+                └──► REJECT  (реклама, трекеры)
 ```
 
 ---
@@ -127,6 +134,7 @@ UCI: `latency_enabled`, `gemini_group`, `main_group`, `switch_threshold`
 - Проверка 2: `GET /proxies` — конфиг загружен и парсился без ошибок
 - **2 сбоя подряд** → перезапуск `/etc/init.d/clash restart`
 - После перезапуска ждёт до 30 сек и проверяет восстановление
+- После восстановления: `sleep 15` + `cf-optimizer restart` — возобновляет latency-monitor и Xray
 - Статус пишет в `/var/run/mihomo-watchdog.status`
 - Состояния: `healthy`, `warning`, `restarting`, `recovered`, `failed`
 - **Не трогает** выбор прокси в GEMINI или любых других группах
@@ -201,10 +209,10 @@ UCI: `watchdog_enabled`
 
 ### Geo Update (`geo-update.sh`)
 
-Скачивает свежие geo-базы Mihomo и делает hot-reload конфига. Запускается раз в неделю (воскресенье 04:00). **По умолчанию включён.**
+Скачивает свежие geo-базы Mihomo и перезапускает сервис. Запускается раз в неделю (воскресенье 04:00). **По умолчанию включён.**
 
 - `geoip.dat`, `geosite.dat`, `country.mmdb` из MetaCubeX latest release
-- После скачивания: `PUT /configs?force=false` — Mihomo перезагружает правила без разрыва соединений
+- После скачивания: полный перезапуск `clash` + `cf-optimizer` (geo-базы парсятся только при старте, hot-reload API не перезагружает их)
 - Curl с 3 retry и таймаутом 120 сек
 
 UCI: `geo_update_enabled`, `mihomo_config`
@@ -288,8 +296,10 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 1. Восстанавливает последний статус latency monitor из `/etc/cf-optimizer.status` (flash) в `/var/run/` (RAM)
 2. Применяет DPI bypass nftables (MSS clamp)
 3. Ждёт готовности Mihomo API (loop с таймаутом 120 сек, вместо слепого `sleep 30`)
-4. Запускает latency monitor как только API готов
-5. Запускает Xray fragment proxy (если `xray_fragment_enabled=1`)
+4. **Дедупликация ip rules**: удаляет лишние копии `fwmark 0x1 → table 100`, оставляет ровно одну (накапливаются при каждом `clash restart`)
+5. Применяет Telegram TPROXY (`inet telegram_tproxy` nft table)
+6. Запускает latency monitor как только API готов
+7. Запускает Xray fragment proxy (если `xray_fragment_enabled=1`)
 
 ---
 
@@ -613,6 +623,43 @@ cat /var/run/mihomo-watchdog.status
 
 ---
 
+## Безопасность
+
+### Mihomo REST API (порт 9090)
+
+API **защищён токеном**. Без заголовка `Authorization: Bearer <secret>` все запросы отклоняются.
+
+Токен задаётся в `config.yaml`:
+```yaml
+external-controller: 0.0.0.0:9090
+secret: "YOUR_API_SECRET"
+```
+
+И в UCI (для скриптов):
+```sh
+uci set cf_optimizer.main.mihomo_secret="YOUR_API_SECRET"
+uci commit cf_optimizer
+```
+
+Все скрипты (`latency-monitor.sh`, `mihomo-watchdog.sh`, `geo-update.sh`) читают секрет из UCI и добавляют `Authorization: Bearer` заголовок автоматически.
+
+### Аутентификация SOCKS5/HTTP прокси
+
+Пароль прокси задаётся в `config.yaml:authentication` — **отдельный**, не совпадающий с SSH-паролем:
+```yaml
+authentication:
+  - "user:YOUR_PROXY_PASSWORD"   # не SSH-пароль!
+```
+
+### Fake-ip-filter и защита от DNS-петель
+
+Домены, к которым роутер обращается сам (GitHub, AGH-фильтры, localhost-сервисы клиентов) должны быть в `fake-ip-filter`, чтобы получать реальный IP вместо `198.18.x.x`:
+- `+.github.com`, `+.github.io`, `+.githubusercontent.com` — скачивание geo-баз, Xray
+- `+.adaway.org` — AGH фильтр-листы
+- `+.flowlayer.app` — локальный сервис Cursor IDE (резолвится в 127.0.0.1)
+
+---
+
 ## UCI-конфиг (`/etc/config/cf_optimizer`)
 
 ```sh
@@ -697,14 +744,22 @@ logread | grep mihomo-watchdog | tail -10
 logread | grep xray-fragment | tail -10
 tail -f /var/log/latency-monitor.log
 
-# Mihomo API
-curl http://127.0.0.1:9090/version
-curl http://127.0.0.1:9090/proxies | python3 -c "import json,sys; d=json.load(sys.stdin); print(list(d['proxies'].keys()))"
+# Mihomo API (требует secret из UCI / config.yaml)
+SECRET=$(uci -q get cf_optimizer.main.mihomo_secret)
+curl -H "Authorization: Bearer $SECRET" http://127.0.0.1:9090/version
+curl -H "Authorization: Bearer $SECRET" http://127.0.0.1:9090/proxies | \
+  python3 -c "import json,sys; d=json.load(sys.stdin); print(list(d['proxies'].keys()))"
 
 # DPI bypass
 nft list table inet cf_dpi_bypass
-nft delete table inet cf_dpi_bypass                 # выключить
-nft -f /etc/nftables.d/99-cf-dpi-bypass.nft        # включить
+nft delete table inet cf_dpi_bypass                      # выключить
+nft -f /etc/cf-optimizer/99-cf-dpi-bypass.nft            # включить вручную
+
+# Telegram TPROXY (проверка трафика)
+nft list table inet telegram_tproxy   # показывает счётчики пакетов
+
+# ip rule — должна быть ровно одна запись fwmark 0x1
+ip rule list | grep fwmark
 
 # Cron
 crontab -l
@@ -723,14 +778,52 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 | `apk update` — "unexpected end of file" | `wget` → `wget-nossl` (без HTTPS) | `ln -sf /bin/uclient-fetch /usr/bin/wget` |
 | `Error: Could not process rule: No such file or directory` | `kmod-nft-tproxy` не установлен | `apk add kmod-nft-tproxy` |
 | `ERROR: Neither nftables nor iptables found` | `iptables` не установлен | `apk add iptables-nft` |
-| DNS SERVFAIL для всех доменов | AGH не может достучаться до Mihomo DNS | `aaaa_disabled: true` в `adguardhome/config.yaml` |
-| Домены `.ru` не резолвятся | Цикл: `direct-nameserver: system` → AGH → Clash | Убрать `system`, использовать `1.1.1.1` |
-| GEMINI переключается слишком часто | `switch_threshold` = 0 | Установить 20: `uci set cf_optimizer.main.switch_threshold=20` |
+| GEMINI переключается слишком часто | `switch_threshold` = 0 | `uci set cf_optimizer.main.switch_threshold=20 && uci commit cf_optimizer` |
 | GEMINI не переключается | Имя группы в UCI не совпадает с Mihomo | Проверить: `uci get cf_optimizer.main.gemini_group` |
-| Watchdog постоянно перезапускает | Mihomo API меняет порт или secret | Проверить `cf_optimizer.main.mihomo_api` и `mihomo_secret` |
-| Lock file завис после сбоя | Скрипт убит без trap (SIGKILL) | `rm -f /var/run/latency-monitor.lock` |
-| AGH не скачивает фильтры (таймаут `198.18.x.x`) | `github.io` / `adaway.org` не в `fake-ip-filter` → AGH получает фейковый IP | Добавить `+.github.io` и `+.adaway.org` в `fake-ip-filter` в `config.yaml`, перезапустить Mihomo |
-| DNS перестал работать после hot-reload | Hot-reload через `/configs` API иногда ломает DNS-листенер `:1053` | `killall clash && /etc/init.d/clash start` (полный перезапуск) |
+| Watchdog постоянно перезапускает | Mihomo API secret не задан в UCI | `uci set cf_optimizer.main.mihomo_secret="..." && uci commit cf_optimizer` |
+| Lock file завис (latency-monitor) | Скрипт убит SIGKILL — trap не ловит | Само устраняется: скрипт проверяет PID lock-файла и удаляет протухший |
+| AGH не скачивает фильтры (таймаут) | `github.io` / `adaway.org` не в `fake-ip-filter` | Уже добавлены в `config.example.yaml` |
+| Дублирование правил `ip rule` | `clash restart` добавляет копии без удаления | Автоматически исправляется при следующем старте `cf-optimizer` |
+| `ss -tulnp` возвращает пусто | `iproute2` не установлен | `apk add iproute2` или использовать `netstat -tulnp` |
+
+---
+
+## Файл дерева (актуальное)
+
+```
+Router/
+├── README.md
+├── config.example.yaml               # шаблон конфига Mihomo (все секреты заменены плейсхолдерами)
+├── adguardhome/
+│   └── config.yaml                   # конфиг AdGuard Home
+└── patches/
+    ├── setup-cf-optimizer.sh         # главный установщик Proxy Optimizer
+    ├── setup-adguardhome.sh          # патч конфига AGH
+    │
+    ├── latency-monitor.sh            # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
+    ├── latency-start.sh              # trigger-файл для LuCI-кнопки (cron ≤1 мин)
+    ├── mihomo-watchdog.sh            # watchdog: restart clash + cf-optimizer при сбое
+    ├── log-rotate.sh                 # ротация логов (tmpfs /var/log)
+    ├── geo-update.sh                 # обновление geo-баз + полный перезапуск
+    ├── xray-control.sh               # управление Xray fragment proxy
+    ├── xray-install.sh               # загрузка Xray aarch64 с GitHub
+    │
+    ├── 98-telegram-tproxy.nft        # Telegram MTProto TPROXY (149.154.x.x / 91.108.x.x)
+    ├── 99-cf-dpi-bypass.nft          # DPI bypass через nftables MSS clamp
+    ├── 99-router-mem.conf            # sysctl: оптимизация RAM
+    │
+    ├── cf-ip-update.sh               # поиск лучшего CF edge IP (только CDN)
+    ├── sni-scan.sh                   # тест SNI через туннель Mihomo (только CDN)
+    ├── wifi-optimize.sh              # максимизация WiFi мощности
+    │
+    └── luci/
+        ├── menu.d/luci-app-cf-optimizer.json
+        ├── menu.d/luci-app-adguardhome.json
+        ├── acl.d/luci-app-cf-optimizer.json
+        ├── view/cf-optimizer/main.js      # Overview
+        ├── view/cf-optimizer/settings.js  # Settings
+        └── view/adguardhome/dashboard.js
+```
 
 ---
 

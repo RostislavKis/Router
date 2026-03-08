@@ -287,6 +287,15 @@ start() {
             waited=$((waited + 5))
         done
 
+        # Deduplicate fwmark 0x1->100 ip rules: clash restart adds a new copy
+        # each time without removing old ones. Keep exactly one.
+        _dup=$(ip rule list 2>/dev/null | grep -c "fwmark 0x1 lookup 100" || echo 0)
+        if [ "${_dup:-0}" -gt 1 ] 2>/dev/null; then
+            while ip rule del fwmark 0x1 lookup 100 2>/dev/null; do :; done
+            ip rule add fwmark 0x1 lookup 100 pref 32762
+            logger -t cf-optimizer "ip rule dedup: ${_dup} copies -> 1"
+        fi
+
         # Telegram MTProto TPROXY: mark real Telegram IPs for TPROXY interception.
         # Applied AFTER Mihomo is confirmed running so :7894 is ready to handle packets.
         # inet clash proxy chain (priority -100) TPROXY's mark=0x1 to :7894.
