@@ -69,10 +69,12 @@ echo "    cf-ip-update.sh     -> /usr/local/bin/"
 echo "    sni-scan.sh         -> /usr/local/bin/"
 echo "    wifi-optimize.sh    -> /usr/local/bin/"
 
-mkdir -p /etc/nftables.d
-cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/nftables.d/99-cf-dpi-bypass.nft
-chmod 644 /etc/nftables.d/99-cf-dpi-bypass.nft
-echo "    99-cf-dpi-bypass.nft -> /etc/nftables.d/"
+mkdir -p /etc/cf-optimizer
+cp "$SCRIPT_DIR/99-cf-dpi-bypass.nft" /etc/cf-optimizer/99-cf-dpi-bypass.nft
+chmod 644 /etc/cf-optimizer/99-cf-dpi-bypass.nft
+echo "    99-cf-dpi-bypass.nft -> /etc/cf-optimizer/"
+# IMPORTANT: do NOT put this file in /etc/nftables.d/ - fw4 includes that dir
+# inside inet fw4 table context; our file defines a separate table which breaks fw4.
 
 mkdir -p /etc/sysctl.d
 cp "$SCRIPT_DIR/99-router-mem.conf" /etc/sysctl.d/99-router-mem.conf
@@ -239,7 +241,7 @@ echo "==> [6/7] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
 sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/nftables.d/99-cf-dpi-bypass.nft
 
 nft delete table inet cf_dpi_bypass 2>/dev/null || true
-if nft -f /etc/nftables.d/99-cf-dpi-bypass.nft 2>/dev/null; then
+if nft -f /etc/cf-optimizer/99-cf-dpi-bypass.nft 2>/dev/null; then
     echo "    nftables rule applied (MSS=${MSS_VALUE})"
 else
     echo "    WARNING: nft failed - rule will apply on reboot"
@@ -263,11 +265,13 @@ start() {
     [ -f /etc/cf-optimizer.status ] && \
         cp /etc/cf-optimizer.status /var/run/latency-monitor.status 2>/dev/null || true
 
-    # DPI bypass via nftables MSS
+    # DPI bypass via nftables MSS (file in /etc/cf-optimizer/, NOT /etc/nftables.d/)
+    # fw4 includes /etc/nftables.d/ inside inet fw4 table context -- our separate
+    # table definition would break fw4 and kill NAT if placed there.
     local dpi_enabled
     dpi_enabled=$(uci -q get cf_optimizer.main.dpi_bypass_enabled)
     if [ "$dpi_enabled" = "1" ]; then
-        nft -f /etc/nftables.d/99-cf-dpi-bypass.nft 2>/dev/null || true
+        nft -f /etc/cf-optimizer/99-cf-dpi-bypass.nft 2>/dev/null || true
         logger -t cf-optimizer "DPI bypass (nftables MSS) applied"
     fi
 
