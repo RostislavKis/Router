@@ -42,7 +42,7 @@ LIMIT_PER_REGION="10"
 # ============================================================
 
 # --- 1. Copy scripts ---
-echo "==> [1/6] Copying scripts to /usr/local/bin/"
+echo "==> [1/8] Copying scripts to /usr/local/bin/"
 
 mkdir -p /usr/local/bin
 
@@ -87,7 +87,7 @@ echo "    99-router-mem.conf  -> /etc/sysctl.d/ (applied)"
 
 # --- 2. Install Xray-core ---
 echo ""
-echo "==> [2/7] Installing Xray-core (aarch64)"
+echo "==> [2/8] Installing Xray-core (aarch64)"
 if /usr/local/bin/xray-install.sh; then
     echo "    Xray-core — установлен"
     # Создаём status-файл сразу — иначе LuCI покажет "Xray не установлен"
@@ -98,7 +98,7 @@ fi
 
 # --- 3. Create UCI config ---
 echo ""
-echo "==> [3/7] Creating /etc/config/cf_optimizer (UCI)"
+echo "==> [3/8] Creating /etc/config/cf_optimizer (UCI)"
 
 touch /etc/config/cf_optimizer
 uci -q delete cf_optimizer.main 2>/dev/null || true
@@ -144,9 +144,47 @@ uci set cf_optimizer.main.mihomo_config="$MIHOMO_CONFIG"
 uci commit cf_optimizer
 echo "    UCI config created."
 
-# --- 3. Deploy LuCI (JSON menu + ACL + JS view — OpenWrt 26.x style, no Lua) ---
+# --- 4. NTP Boot Loop Protection ---
+# Problem: OpenWrt default NTP servers (*.openwrt.pool.ntp.org) are TWO subdomain
+# levels deep. Mihomo fake-ip-filter uses '*.pool.ntp.org' which only matches ONE
+# level, so 0.openwrt.pool.ntp.org resolves to fake-ip 198.18.x.x instead of a
+# real address. ntpd (uid=ntp, not root) goes through TPROXY -> NTP depends on the
+# VPN proxy. On cold boot this creates a circular deadlock: wrong time -> TLS
+# validation fails -> proxy won't start -> NTP can't sync -> time stays wrong.
+#
+# Fix: replace with servers already covered by fake-ip-filter:
+#   0/1.pool.ntp.org      — matched by '*.pool.ntp.org' (one level) -> real IP
+#   time.google.com       — explicitly in fake-ip-filter           -> real IP
+#   time.cloudflare.com   — explicitly in fake-ip-filter           -> real IP
+#
+# Idempotent: only patches if *.openwrt.pool.ntp.org is still present.
 echo ""
-echo "==> [4/7] Installing LuCI page (Services > Proxy Optimizer)"
+echo "==> [4/8] NTP Boot Loop Protection"
+
+_ntp_ok=1
+for _ntp_s in $(uci -q get system.ntp.server 2>/dev/null); do
+    case "$_ntp_s" in
+        *.openwrt.pool.ntp.org) _ntp_ok=0; break ;;
+    esac
+done
+
+if [ "$_ntp_ok" = "0" ]; then
+    uci -q del system.ntp.server 2>/dev/null || true
+    uci add_list system.ntp.server='0.pool.ntp.org'
+    uci add_list system.ntp.server='1.pool.ntp.org'
+    uci add_list system.ntp.server='time.google.com'
+    uci add_list system.ntp.server='time.cloudflare.com'
+    uci commit system
+    /etc/init.d/sysntpd restart 2>/dev/null || true
+    echo "    NTP servers patched: 0/1.pool.ntp.org + time.google.com + time.cloudflare.com"
+    echo "    (removed *.openwrt.pool.ntp.org — not covered by fake-ip-filter)"
+else
+    echo "    NTP servers already correct — skipping"
+fi
+
+# --- 5. Deploy LuCI (JSON menu + ACL + JS view — OpenWrt 26.x style, no Lua) ---
+echo ""
+echo "==> [5/8] Installing LuCI page (Services > Proxy Optimizer)"
 
 # JSON menu entry (Proxy Optimizer)
 mkdir -p /usr/share/luci/menu.d
@@ -201,7 +239,7 @@ echo "    LuCI installed, cache cleared, rpcd/uhttpd restarted."
 
 # --- 4. Setup cron ---
 echo ""
-echo "==> [5/7] Setting up cron"
+echo "==> [6/8] Setting up cron"
 
 CRON_FILE="/etc/crontabs/root"
 touch "$CRON_FILE"
@@ -239,7 +277,7 @@ echo "    SNI scan:          daily 02:30 (activate via LuCI)"
 
 # --- 5. Apply DPI bypass nftables ---
 echo ""
-echo "==> [6/7] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
+echo "==> [7/8] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
 
 sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/cf-optimizer/99-cf-dpi-bypass.nft
 
@@ -252,7 +290,7 @@ fi
 
 # --- 6. Init script ---
 echo ""
-echo "==> [7/7] Creating /etc/init.d/cf-optimizer"
+echo "==> [8/8] Creating /etc/init.d/cf-optimizer"
 
 cat > /etc/init.d/cf-optimizer << 'INITEOF'
 #!/bin/sh /etc/rc.common
@@ -366,6 +404,7 @@ echo ""
 echo " LuCI: Services > Proxy Optimizer"
 echo ""
 echo " Что включено по умолчанию:"
+echo "   [FIX] NTP Boot Loop Protection — 0/1.pool.ntp.org + time.google.com + time.cloudflare.com"
 echo "   [ON]  Latency Monitor  — GEMINI каждые 2 часа (гистерезис ${SWITCH_THRESHOLD}%)"
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
 echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"

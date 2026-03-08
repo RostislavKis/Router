@@ -431,10 +431,11 @@ ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patche
 3. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
    - **ON**: Latency Monitor, DPI Bypass, Watchdog, Geo Update
    - **OFF**: Xray Fragment (бинарник уже есть, нужно добавить `dialer-proxy`), CF IP Updater, SNI Scanner (только CDN)
-4. Устанавливает LuCI-файлы: меню "Proxy Optimizer", ACL, `main.js` (Overview), `settings.js` (Settings), `dashboard.js` (AGH)
-5. Добавляет 7 задач в cron
-6. Применяет nftables DPI bypass (MSS=150)
-7. Создаёт и включает `/etc/init.d/cf-optimizer` (START=96)
+4. **NTP Boot Loop Protection** — заменяет дефолтные `*.openwrt.pool.ntp.org` на серверы, совместимые с fake-ip-filter (см. раздел [Безопасность](#ntp-и-защита-от-boot-loop))
+5. Устанавливает LuCI-файлы: меню "Proxy Optimizer", ACL, `main.js` (Overview), `settings.js` (Settings), `dashboard.js` (AGH)
+6. Добавляет 7 задач в cron
+7. Применяет nftables DPI bypass (MSS=150)
+8. Создаёт и включает `/etc/init.d/cf-optimizer` (START=96)
 
 ### Шаг 3. Проверка
 
@@ -654,6 +655,7 @@ authentication:
 ### Fake-ip-filter и защита от DNS-петель
 
 Домены, к которым роутер обращается сам (GitHub, AGH-фильтры, localhost-сервисы клиентов) должны быть в `fake-ip-filter`, чтобы получать реальный IP вместо `198.18.x.x`:
+
 - `+.github.com`, `+.github.io`, `+.githubusercontent.com` — скачивание geo-баз, Xray
 - `+.adaway.org` — AGH фильтр-листы
 - `+.flowlayer.app` — локальный сервис Cursor IDE (резолвится в 127.0.0.1)
