@@ -36,7 +36,9 @@ write_status() {
 is_installed() { [ -x "$XRAY_BIN" ]; }
 
 is_running() {
-    [ -f "$XRAY_PID" ] && kill -0 "$(cat "$XRAY_PID")" 2>/dev/null
+    [ -f "$XRAY_PID" ] && \
+    kill -0 "$(cat "$XRAY_PID")" 2>/dev/null && \
+    grep -q xray /proc/$(cat "$XRAY_PID")/cmdline 2>/dev/null
 }
 
 generate_conf() {

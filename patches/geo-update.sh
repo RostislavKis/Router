@@ -63,24 +63,16 @@ download_file "$GEOSITE_URL" "${MIHOMO_DATA}/geosite.dat" && updated=1
 download_file "$MMDB_URL"    "${MIHOMO_DATA}/country.mmdb"
 
 # ----------------------------------------------------------------
-# Hot-reload Mihomo config (only if at least one file updated)
+# Restart Mihomo to load new geo databases (API hot-reload does not
+# reload geo data — it is parsed only at startup).
+# cf-optimizer restarts afterwards to resume latency-monitor and Xray.
 # ----------------------------------------------------------------
 if [ "$updated" = "1" ]; then
-    logger -t "$LOG_TAG" "Triggering Mihomo config reload"
-    local rc
-    if [ -n "$AUTH_HEADER" ]; then
-        rc=$(curl -sf -X PUT \
-            -H "Content-Type: application/json" \
-            -H "$AUTH_HEADER" \
-            -d '{}' -w "%{http_code}" -o /dev/null \
-            --max-time 15 "${MIHOMO_API}/configs?force=false" 2>/dev/null)
-    else
-        rc=$(curl -sf -X PUT \
-            -H "Content-Type: application/json" \
-            -d '{}' -w "%{http_code}" -o /dev/null \
-            --max-time 15 "${MIHOMO_API}/configs?force=false" 2>/dev/null)
-    fi
-    logger -t "$LOG_TAG" "Reload response: ${rc:-no response}"
+    logger -t "$LOG_TAG" "Restarting Mihomo to apply new geo databases"
+    /etc/init.d/clash restart 2>/dev/null || true
+    sleep 15
+    /etc/init.d/cf-optimizer restart 2>/dev/null || true
+    logger -t "$LOG_TAG" "Mihomo restarted, cf-optimizer resumed"
 fi
 
 logger -t "$LOG_TAG" "Geo update complete"

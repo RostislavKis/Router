@@ -27,16 +27,17 @@ allow-lan: true
 bind-address: '*'
 mode: rule
 authentication:
-  - "user:password"    # YOUR_ROUTER_PASSWORD
+  - "user:YOUR_PROXY_PASSWORD"    # Отдельный пароль для SOCKS5/HTTP прокси (НЕ SSH!)
 log-level: info
 ipv6: false
 external-controller: 0.0.0.0:9090
+secret: "YOUR_API_SECRET"         # Обязательно! Токен для REST API (Zashboard, скрипты)
 external-ui: /opt/clash/ui/xd
 external-ui-url: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip"
 
 tcp-fast-open: true
 udp-fragment: false
-enable-process: true
+enable-process: false
 routing-mark: 2
 
 profile:
@@ -72,7 +73,7 @@ dns:
   fake-ip-range: '198.18.0.1/16'
   fake-ip-filter-mode: blacklist
   prefer-h3: true
-  respect-rules: true
+  respect-rules: false
   use-hosts: true
   use-system-hosts: false
   ipv6: false

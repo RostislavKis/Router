@@ -113,6 +113,10 @@ if [ "$fails" -ge 2 ]; then
             echo "WATCHDOG_STATUS=recovered"
             echo "WATCHDOG_FAILS=0"
         } > "$STATUS_FILE"
+        # Restart cf-optimizer so latency-monitor and Xray resume after clash restart
+        sleep 15
+        /etc/init.d/cf-optimizer restart 2>/dev/null || true
+        logger -t "$LOG_TAG" "cf-optimizer restarted after Mihomo recovery"
     else
         logger -t "$LOG_TAG" "ERROR: Mihomo still not responding after restart"
         {
