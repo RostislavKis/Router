@@ -238,7 +238,7 @@ echo "    SNI scan:          daily 02:30 (activate via LuCI)"
 echo ""
 echo "==> [6/7] Applying DPI bypass (nftables MSS=${MSS_VALUE})"
 
-sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/nftables.d/99-cf-dpi-bypass.nft
+sed -i "s/size set [0-9]*/size set ${MSS_VALUE}/" /etc/cf-optimizer/99-cf-dpi-bypass.nft
 
 nft delete table inet cf_dpi_bypass 2>/dev/null || true
 if nft -f /etc/cf-optimizer/99-cf-dpi-bypass.nft 2>/dev/null; then
