@@ -28,8 +28,6 @@
 
 set -e
 
-SSCLASH_ARCH="aarch64_cortex-a53"
-
 GEOIP_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
 GEOSITE_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
 MMDB_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb"
@@ -63,61 +61,43 @@ SSCLASH_VERSION=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 
     && echo "    Найден релиз: $SSCLASH_VERSION" \
     || echo "    (GitHub API не ответил — попробуем по-другому)"
 
-SSCLASH_APK_URL=$(echo "$RELEASE_JSON" | \
-    grep -o 'https://github.com/[^"]*\.apk' | \
-    grep "${SSCLASH_ARCH}" | grep -v 'luci' | head -1)
-
+# Релизы SSClash содержат только luci-app-ssclash-X.Y.Z-r1.apk
+# (один пакет: init.d/clash + clash-rules + LuCI интерфейс)
 LUCI_APK_URL=$(echo "$RELEASE_JSON" | \
-    grep -o 'https://github.com/[^"]*\.apk' | \
-    grep 'luci-app-ssclash' | head -1)
+    grep -o 'https://github.com/[^"]*luci-app-ssclash[^"]*\.apk' | head -1)
 
-# Fallback 1: конструируем URL из версии если JSON не дал ссылку (uclient-fetch обрезает длинный JSON)
-if [ -z "$SSCLASH_APK_URL" ] && [ -n "$SSCLASH_VERSION" ]; then
+# Fallback 1: конструируем URL из версии если JSON не дал ссылку
+if [ -z "$LUCI_APK_URL" ] && [ -n "$SSCLASH_VERSION" ]; then
     VER="${SSCLASH_VERSION#v}"
-    SSCLASH_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/${SSCLASH_VERSION}/ssclash_${VER}_${SSCLASH_ARCH}.apk"
-    LUCI_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/${SSCLASH_VERSION}/luci-app-ssclash_${VER}_all.apk"
+    LUCI_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/${SSCLASH_VERSION}/luci-app-ssclash-${VER}-r1.apk"
     echo "    (URL из тега: $SSCLASH_VERSION)"
 fi
 
-# Fallback 2: если API не ответил — пробуем получить URL через HTML страницы latest
-if [ -z "$SSCLASH_APK_URL" ]; then
+# Fallback 2: HTML страница
+if [ -z "$LUCI_APK_URL" ]; then
     echo "    Пробуем через страницу releases/latest..."
     RELEASES_HTML=$(uclient-fetch -q -O - \
         "https://github.com/zerolabnet/SSClash/releases/latest" \
         2>/dev/null) || RELEASES_HTML=""
-    SSCLASH_APK_URL=$(echo "$RELEASES_HTML" | \
-        grep -o '/zerolabnet/SSClash/releases/download/[^"]*'"${SSCLASH_ARCH}"'[^"]*\.apk' | \
-        grep -v 'luci' | head -1)
-    [ -n "$SSCLASH_APK_URL" ] && SSCLASH_APK_URL="https://github.com${SSCLASH_APK_URL}"
     LUCI_APK_URL=$(echo "$RELEASES_HTML" | \
         grep -o '/zerolabnet/SSClash/releases/download/[^"]*luci-app-ssclash[^"]*\.apk' | head -1)
     [ -n "$LUCI_APK_URL" ] && LUCI_APK_URL="https://github.com${LUCI_APK_URL}"
 fi
 
-if [ -z "$SSCLASH_APK_URL" ]; then
+if [ -z "$LUCI_APK_URL" ]; then
     echo "    ОШИБКА: не удалось получить URL SSClash."
     echo "    Скачайте вручную с https://github.com/zerolabnet/SSClash/releases/latest"
-    echo "    Нужны файлы: ssclash_*_${SSCLASH_ARCH}.apk и luci-app-ssclash_*_all.apk"
+    echo "    Нужен файл: luci-app-ssclash-*.apk"
     exit 1
 fi
 
-echo "    ssclash: $(basename "$SSCLASH_APK_URL")"
-[ -n "$LUCI_APK_URL" ] && echo "    luci:    $(basename "$LUCI_APK_URL")"
+echo "    $(basename "$LUCI_APK_URL")"
 echo ""
 
-uclient-fetch -O /tmp/ssclash.apk "$SSCLASH_APK_URL"
-apk add --allow-untrusted /tmp/ssclash.apk
-rm -f /tmp/ssclash.apk
-echo "    ssclash — установлен"
-
-if [ -n "$LUCI_APK_URL" ]; then
-    uclient-fetch -O /tmp/luci-app-ssclash.apk "$LUCI_APK_URL"
-    apk add --allow-untrusted /tmp/luci-app-ssclash.apk
-    rm -f /tmp/luci-app-ssclash.apk
-    echo "    luci-app-ssclash — установлен"
-else
-    echo "    luci-app-ssclash — пропущен (URL не найден, установите вручную)"
-fi
+uclient-fetch -O /tmp/luci-app-ssclash.apk "$LUCI_APK_URL"
+apk add --allow-untrusted /tmp/luci-app-ssclash.apk
+rm -f /tmp/luci-app-ssclash.apk
+echo "    luci-app-ssclash — установлен"
 
 # --- 4. Бинарник Mihomo (последний релиз) ---
 echo ""
