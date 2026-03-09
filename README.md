@@ -6,7 +6,7 @@
 
 ## Архитектура
 
-```
+```text
 Клиент (любое устройство в сети)
     │
     │ DNS-запрос
@@ -45,7 +45,7 @@ Mihomo DNS :1053  (fake-ip mode, 198.18.0.0/16)
 ## Что установлено
 
 | Компонент | Версия | Назначение |
-|-----------|--------|-----------|
+| --------- | ------ | ---------- |
 | OpenWrt | 25.12.0 r32713-f919e7899d | ОС роутера (aarch64, mediatek/filogic) |
 | SSClash / Mihomo | latest | TPROXY + fake-ip DNS, порт 7894 |
 | AdGuard Home | latest | DNS-фильтрация, порт 53 / UI 3000 |
@@ -56,45 +56,321 @@ Mihomo DNS :1053  (fake-ip mode, 198.18.0.0/16)
 
 ## Файлы репозитория
 
-```
+```text
 Router/
-├── README.md                          # этот файл
-├── config.example.yaml                # шаблон конфига Mihomo (плейсхолдеры)
+├── README.md
+├── config.example.yaml               # шаблон конфига Mihomo (все секреты заменены плейсхолдерами)
 ├── adguardhome/
-│   └── config.yaml                    # конфиг AdGuard Home
+│   └── config.yaml                   # конфиг AdGuard Home
 └── patches/
-    ├── setup-cf-optimizer.sh          # главный установщик Proxy Optimizer
-    ├── setup-adguardhome.sh           # патч конфига AGH под Mihomo fake-ip
+    ├── setup-cf-optimizer.sh         # главный установщик Proxy Optimizer
+    ├── setup-adguardhome.sh          # патч конфига AGH (upstream DNS, пароли, AAAA)
+    ├── setup-clash.sh                # установщик SSClash + Mihomo бинарник с GitHub
     │
-    ├── latency-monitor.sh             # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
-    ├── latency-start.sh               # пишет trigger-файл для LuCI-кнопки (cron подхватывает за ≤1 мин)
-    ├── mihomo-watchdog.sh             # watchdog: перезапуск Mihomo при сбое
-    ├── log-rotate.sh                  # ротация логов (tmpfs /var/log)
-    ├── geo-update.sh                  # обновление geoip.dat / geosite.dat / country.mmdb
-    ├── xray-control.sh                # управление Xray fragment proxy (start/stop/status)
-    ├── xray-install.sh                # загрузка Xray бинарника для aarch64 с GitHub
-    ├── 99-router-mem.conf             # sysctl: оптимизация RAM для embedded/flash системы
+    ├── latency-monitor.sh            # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
+    ├── latency-start.sh              # trigger-файл для LuCI-кнопки (cron ≤1 мин)
+    ├── mihomo-watchdog.sh            # watchdog: restart clash + cf-optimizer при сбое
+    ├── log-rotate.sh                 # ротация логов (tmpfs /var/log)
+    ├── geo-update.sh                 # обновление geo-баз + полный перезапуск
+    ├── xray-control.sh               # управление Xray fragment proxy
+    ├── xray-install.sh               # загрузка Xray aarch64 с GitHub
     │
-    ├── cf-ip-update.sh                # поиск лучшего CF edge IP (только для прокси за Cloudflare CDN)
-    ├── sni-scan.sh                    # тест SNI через туннель Mihomo (только для прокси за Cloudflare CDN)
-    ├── wifi-optimize.sh               # максимизация мощности и покрытия WiFi
-    ├── 99-cf-dpi-bypass.nft           # DPI bypass через nftables MSS clamp
-    ├── xray-fragment.json             # шаблон конфига Xray fragment (генерируется из UCI при старте)
+    ├── 98-telegram-tproxy.nft        # Telegram MTProto TPROXY (149.154.x.x / 91.108.x.x)
+    ├── 99-cf-dpi-bypass.nft          # DPI bypass через nftables MSS clamp
+    ├── 99-router-mem.conf            # sysctl: оптимизация RAM
+    │
+    ├── cf-ip-update.sh               # поиск лучшего CF edge IP (только CDN; ⚠ не в репо — gitignored, персональный)
+    ├── sni-scan.sh                   # тест SNI через туннель Mihomo (только CDN)
+    ├── wifi-optimize.sh              # максимизация WiFi мощности
     │
     └── luci/
-        ├── menu.d/luci-app-cf-optimizer.json   # пункт меню "Proxy Optimizer"
-        ├── menu.d/luci-app-adguardhome.json    # замена меню AGH (одна кнопка "Open Dashboard")
-        ├── acl.d/luci-app-cf-optimizer.json    # права доступа rpcd
-        ├── view/cf-optimizer/main.js           # Overview: статус мониторов, кнопки управления, live log
-        ├── view/cf-optimizer/settings.js       # Settings: UCI-настройки прокси-групп, порогов, API
-        └── view/adguardhome/dashboard.js       # кастомная страница AGH (кнопка, без авто-открытия)
+        ├── menu.d/luci-app-cf-optimizer.json
+        ├── menu.d/luci-app-adguardhome.json
+        ├── acl.d/luci-app-cf-optimizer.json
+        ├── view/cf-optimizer/main.js      # Overview
+        ├── view/cf-optimizer/settings.js  # Settings
+        └── view/adguardhome/dashboard.js
 ```
 
 > Реальный `config.yaml` с ключами VPN хранится локально и **не публикуется** (`.gitignore`).
 
 ---
 
-## Proxy Optimizer — что делает и как работает
+## Установка Proxy Optimizer
+
+### Способ 1 — одна команда в SSH (самый простой)
+
+Открой SSH-сессию на роутере и выполни:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/RostislavKis/Router/master/install.sh | sh
+```
+
+`install.sh` сразу запросит пароль (SSH/LuCI + AdGuard Home) интерактивно, затем скачает все файлы с GitHub и запустит установку. Интернет на роутере должен работать.
+
+---
+
+### Способ 2 — `install.sh` + файлы рядом (офлайн)
+
+```sh
+# С ПК: скопировать install.sh и папку patches/ на роутер
+scp -r patches/ install.sh root@192.168.1.1:/tmp/
+
+# На роутере: одна команда
+ssh root@192.168.1.1 "sh /tmp/install.sh"
+```
+
+`install.sh` автоматически обнаружит локальные файлы и не будет ничего скачивать.
+
+---
+
+### Способ 3 — `deploy.py` с ПК (Python)
+
+Альтернатива для тех, кто предпочитает запускать с Windows без SSH-сессии. Впиши данные в верхнюю секцию файла и запусти:
+
+```sh
+pip install paramiko        # один раз
+python -X utf8 deploy.py    # деплой
+```
+
+> `deploy.py` находится в `.gitignore` (содержит пароль) — не попадает в репозиторий.
+
+---
+
+### Ручной способ
+
+#### Шаг 1. Настроить переменные в установщике
+
+Открой `patches/setup-cf-optimizer.sh` и при необходимости измени:
+
+```sh
+GEMINI_GROUP="🤖 GEMINI"       # точное имя selector-группы из config.yaml
+MAIN_GROUP="PrvtVPN All Auto"  # точное имя url-test группы
+SWITCH_THRESHOLD="20"           # гистерезис %: 20 = переключать только если экономия > 20%
+MSS_VALUE="150"                 # DPI bypass MSS
+```
+
+#### Шаг 2. Скопировать и запустить
+
+```sh
+# С ПК
+scp -r patches/ root@192.168.1.1:/tmp/patches/
+
+# На роутере
+ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patches/setup-cf-optimizer.sh"
+```
+
+#### Что делает установщик
+
+1. Копирует скрипты в `/usr/local/bin/` с правами 755
+2. Устанавливает Xray-core бинарник (aarch64) — автоматически, если есть интернет
+3. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
+   - **ON**: Latency Monitor, DPI Bypass, Watchdog, Geo Update
+   - **OFF**: Xray Fragment (бинарник уже есть, нужно добавить `dialer-proxy`), CF IP Updater, SNI Scanner (только CDN)
+4. **NTP Boot Loop Protection** — заменяет дефолтные `*.openwrt.pool.ntp.org` на серверы, совместимые с fake-ip-filter (см. раздел [Безопасность](#ntp-и-защита-от-boot-loop))
+5. Устанавливает LuCI-файлы: меню "Proxy Optimizer", ACL, `main.js` (Overview), `settings.js` (Settings), `dashboard.js` (AGH)
+6. Добавляет 7 задач в cron
+7. Применяет nftables DPI bypass (MSS=150)
+8. Создаёт и включает `/etc/init.d/cf-optimizer` (START=96)
+
+#### Шаг 3. Проверка
+
+```sh
+# Запустить latency monitor вручную (первый прогон)
+/usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1 &
+
+# Посмотреть результат (~1-2 мин)
+cat /var/run/latency-monitor.status
+
+# Watchdog статус
+cat /var/run/mihomo-watchdog.status
+
+# Xray статус
+cat /var/run/xray-fragment.status
+
+# Лог
+logread | grep latency-monitor | tail -20
+```
+
+#### Шаг 4 (опционально). Активировать Xray Fragment
+
+Xray-core устанавливается автоматически установщиком. Для активации:
+
+```sh
+# Добавить dialer-proxy к нужным прокси в config.yaml вручную,
+# или нажать "[+] Применить ко всем прокси" в LuCI (Overview → Xray Fragment).
+# Включить в LuCI: Services → Proxy Optimizer → Settings → Xray Fragment → ON
+```
+
+---
+
+## Настройка AdGuard Home
+
+Скрипт `patches/setup-adguardhome.sh` патчит конфиг AGH:
+
+- upstream DNS → `127.0.0.1:1053` (Mihomo fake-ip)
+- отключает AAAA-запросы
+- устанавливает пароль root (SSH/LuCI) и пароль AdGuard Home
+
+**Пароль задаётся интерактивно — вводится один раз, вручную ничего считать не нужно.**
+
+При запуске через `install.sh` — пароль запрашивается в самом начале установки и применяется везде автоматически.
+
+При самостоятельном запуске скрипт запросит пароль в консоли:
+
+```sh
+scp patches/setup-adguardhome.sh root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "chmod +x /tmp/setup-adguardhome.sh && /tmp/setup-adguardhome.sh"
+```
+
+Скрипт автоматически:
+
+1. Устанавливает пароль root (SSH/LuCI): `passwd root`
+2. Генерирует bcrypt-хэш через `python3` и применяет к AdGuard Home
+
+> Если `python3+bcrypt` недоступен — задайте пароль AGH вручную через веб-интерфейс: `http://192.168.1.1:3000`
+
+---
+
+## Пошаговая установка с нуля
+
+### Шаг 1. Сборка прошивки на firmware-selector.openwrt.org
+
+1. Открой [firmware-selector.openwrt.org](https://firmware-selector.openwrt.org/)
+2. Найди `GL-MT6000` / `Flint 2`
+3. **Customize installed packages** — вставь:
+
+   ```text
+   apk-mbedtls base-files ca-bundle dnsmasq dropbear firewall4 fitblk fstools
+   kmod-crypto-hw-safexcel kmod-gpio-button-hotplug kmod-leds-gpio kmod-nft-offload kmod-nft-tproxy
+   libc libgcc libustream-mbedtls logd mtd netifd nftables odhcp6c odhcpd-ipv6only
+   ppp ppp-mod-pppoe procd-ujail uboot-envtools uci uclient-fetch urandom-seed urngd
+   wpad-basic-mbedtls e2fsprogs f2fsck mkf2fs kmod-usb3 kmod-mt7915e
+   kmod-mt7986-firmware mt7986-wo-firmware luci adguardhome luci-i18n-base-ru
+   luci-i18n-firewall-ru luci-app-firewall kmod-tun bash curl ip-full wget
+   iptables-mod-tproxy nftables-json openssh-sftp-server nano mc htop
+   ```
+
+   > `kmod-nft-tproxy` — **обязательно** включить в прошивку. Без него nftables TPROXY не работает.
+   > Если забыл — можно доустановить: `apk add kmod-nft-tproxy` (после фикса wget).
+
+4. Скачай `*-squashfs-sysupgrade.bin`
+
+---
+
+### Шаг 2. Прошивка через U-Boot
+
+1. LAN-кабель: ПК → LAN-порт роутера
+2. Статический IP на ПК: `192.168.1.2 / 255.255.255.0 / GW 192.168.1.1`
+3. Выключи роутер → зажми Reset → включи, держи ~5 сек до быстрого мигания LED
+4. Открой `http://192.168.1.1` → загрузи `sysupgrade.bin` → Update
+5. Жди 3–5 минут, не отключай питание
+
+---
+
+### Шаг 3. Первые шаги после прошивки
+
+```sh
+ssh root@192.168.1.1
+```
+
+#### 3.1 Фикс wget (без этого apk update не работает)
+
+```sh
+# wget симлинкован на wget-nossl (без HTTPS) — заменяем на uclient-fetch
+ln -sf /bin/uclient-fetch /usr/bin/wget
+
+# Проверка
+apk update
+```
+
+#### 3.2 Установка пакетов (если не были в прошивке)
+
+```sh
+apk add kmod-nft-tproxy iptables-nft
+```
+
+---
+
+### Шаг 4. Установка SSClash
+
+Используй установщик — он сам скачает последний релиз SSClash и Mihomo:
+
+```sh
+scp patches/setup-clash.sh root@192.168.1.1:/tmp/
+ssh root@192.168.1.1 "chmod +x /tmp/setup-clash.sh && /tmp/setup-clash.sh"
+```
+
+Или вручную (только пакет LuCI + init.d + clash-rules, без Mihomo бинаря):
+
+```sh
+apk add luci-app-ssclash
+```
+
+---
+
+### Шаг 5. Загрузка конфига
+
+```sh
+# С ПК
+scp config.yaml root@192.168.1.1:/opt/clash/config.yaml
+
+# На роутере
+/etc/init.d/clash enable
+/etc/init.d/clash start
+```
+
+Проверка:
+
+```sh
+logread | grep 'clash-rules' | tail -5
+# Ожидается: "nftables rules applied successfully"
+```
+
+---
+
+### Шаг 6. Настройка AdGuard Home
+
+1. Открой `http://192.168.1.1:3000`
+2. Пройди мастер: DNS `0.0.0.0:53`, веб `0.0.0.0:3000`
+3. Запусти патч-скрипт (см. раздел выше)
+
+---
+
+### Шаг 7. Установка Proxy Optimizer
+
+```sh
+scp -r patches/ root@192.168.1.1:/tmp/patches/
+ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patches/setup-cf-optimizer.sh"
+```
+
+---
+
+### Шаг 8. Проверка
+
+```sh
+# Сервисы запущены
+/etc/init.d/clash status
+/etc/init.d/adguardhome status
+
+# Порты
+ss -tlunp | grep -E ':53|:1053|:7894|:3000|:9090'
+
+# DNS
+nslookup gemini.google.com 127.0.0.1  # → 198.18.x.x (fake-ip → прокси)
+nslookup yandex.ru 127.0.0.1          # → реальный IP (direct)
+
+# DPI bypass активен
+nft list table inet cf_dpi_bypass
+
+# Latency monitor + watchdog
+cat /var/run/latency-monitor.status
+cat /var/run/mihomo-watchdog.status
+```
+
+---
+
+## Proxy Optimizer — компоненты
 
 Набор из 7 компонентов для оптимизации и стабилизации работы Mihomo. Каждый компонент можно включить/выключить независимо через LuCI (`Services → Proxy Optimizer`).
 
@@ -361,270 +637,6 @@ UCI: `ip_updater_enabled`, `sni_scanner_enabled`, `worker_url`, `regions`, `prox
 
 ---
 
-## Установка Proxy Optimizer
-
-### Способ 1 — одна команда в SSH (самый простой)
-
-Открой SSH-сессию на роутере и выполни:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/RostislavKis/Router/master/install.sh | sh
-```
-
-`install.sh` сам скачает все нужные файлы с GitHub и запустит установку. Интернет на роутере должен работать (SSClash уже настроен).
-
----
-
-### Способ 2 — `install.sh` + файлы рядом (офлайн)
-
-```sh
-# С ПК: скопировать install.sh и папку patches/ на роутер
-scp -r patches/ install.sh root@192.168.1.1:/tmp/
-
-# На роутере: одна команда
-ssh root@192.168.1.1 "sh /tmp/install.sh"
-```
-
-`install.sh` автоматически обнаружит локальные файлы и не будет ничего скачивать.
-
----
-
-### Способ 3 — `deploy.py` с ПК (Python)
-
-Альтернатива для тех, кто предпочитает запускать с Windows без SSH-сессии. Впиши данные в верхнюю секцию файла и запусти:
-
-```sh
-pip install paramiko        # один раз
-python -X utf8 deploy.py    # деплой
-```
-
-> `deploy.py` находится в `.gitignore` (содержит пароль) — не попадает в репозиторий.
-
----
-
-### Ручной способ
-
-### Шаг 1. Настроить переменные в установщике
-
-Открой `patches/setup-cf-optimizer.sh` и при необходимости измени:
-
-```sh
-GEMINI_GROUP="🤖 GEMINI"       # точное имя selector-группы из config.yaml
-MAIN_GROUP="PrvtVPN All Auto"  # точное имя url-test группы
-SWITCH_THRESHOLD="20"           # гистерезис %: 20 = переключать только если экономия > 20%
-MSS_VALUE="150"                 # DPI bypass MSS
-```
-
-### Шаг 2. Скопировать и запустить
-
-```sh
-# С ПК
-scp -r patches/ root@192.168.1.1:/tmp/patches/
-
-# На роутере
-ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patches/setup-cf-optimizer.sh"
-```
-
-### Что делает установщик
-
-1. Копирует 11 скриптов в `/usr/local/bin/` с правами 755
-2. Устанавливает Xray-core бинарник (aarch64) — автоматически, если есть интернет
-3. Создаёт UCI-конфиг `/etc/config/cf_optimizer`:
-   - **ON**: Latency Monitor, DPI Bypass, Watchdog, Geo Update
-   - **OFF**: Xray Fragment (бинарник уже есть, нужно добавить `dialer-proxy`), CF IP Updater, SNI Scanner (только CDN)
-4. **NTP Boot Loop Protection** — заменяет дефолтные `*.openwrt.pool.ntp.org` на серверы, совместимые с fake-ip-filter (см. раздел [Безопасность](#ntp-и-защита-от-boot-loop))
-5. Устанавливает LuCI-файлы: меню "Proxy Optimizer", ACL, `main.js` (Overview), `settings.js` (Settings), `dashboard.js` (AGH)
-6. Добавляет 7 задач в cron
-7. Применяет nftables DPI bypass (MSS=150)
-8. Создаёт и включает `/etc/init.d/cf-optimizer` (START=96)
-
-### Шаг 3. Проверка
-
-```sh
-# Запустить latency monitor вручную (первый прогон)
-/usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1 &
-
-# Посмотреть результат (~1-2 мин)
-cat /var/run/latency-monitor.status
-
-# Watchdog статус
-cat /var/run/mihomo-watchdog.status
-
-# Xray статус
-cat /var/run/xray-fragment.status
-
-# Лог
-logread | grep latency-monitor | tail -20
-```
-
-### Шаг 4 (опционально). Активировать Xray Fragment
-
-Xray-core устанавливается автоматически установщиком. Для активации:
-
-```sh
-# Добавить dialer-proxy к нужным прокси в config.yaml вручную,
-# или нажать "[+] Применить ко всем прокси" в LuCI (Overview → Xray Fragment).
-# Включить в LuCI: Services → Proxy Optimizer → Settings → Xray Fragment → ON
-```
-
----
-
-## Настройка AdGuard Home
-
-Скрипт `patches/setup-adguardhome.sh` патчит конфиг AGH:
-
-- upstream DNS → `127.0.0.1:1053` (Mihomo fake-ip)
-- отключает AAAA-запросы
-- устанавливает логин/пароль
-
-**Перед запуском** — впиши свои данные в скрипт:
-
-```sh
-AGH_USER="root"
-AGH_PASSWORD_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
-
-# Сгенерировать bcrypt-хэш:
-htpasswd -bnBC 10 "" YOUR_PASSWORD | tr -d ':\n'
-```
-
-**Запуск:**
-
-```sh
-scp patches/setup-adguardhome.sh root@192.168.1.1:/tmp/
-ssh root@192.168.1.1 "chmod +x /tmp/setup-adguardhome.sh && /tmp/setup-adguardhome.sh"
-```
-
----
-
-## Пошаговая установка с нуля
-
-### Шаг 1. Сборка прошивки на firmware-selector.openwrt.org
-
-1. Открой [firmware-selector.openwrt.org](https://firmware-selector.openwrt.org/)
-2. Найди `GL-MT6000` / `Flint 2`
-3. **Customize installed packages** — вставь:
-
-```text
-apk-mbedtls base-files ca-bundle dnsmasq dropbear firewall4 fitblk fstools
-kmod-crypto-hw-safexcel kmod-gpio-button-hotplug kmod-leds-gpio kmod-nft-offload kmod-nft-tproxy
-libc libgcc libustream-mbedtls logd mtd netifd nftables odhcp6c odhcpd-ipv6only
-ppp ppp-mod-pppoe procd-ujail uboot-envtools uci uclient-fetch urandom-seed urngd
-wpad-basic-mbedtls e2fsprogs f2fsck mkf2fs kmod-usb3 kmod-mt7915e
-kmod-mt7986-firmware mt7986-wo-firmware luci adguardhome luci-i18n-base-ru
-luci-i18n-firewall-ru luci-app-firewall kmod-tun bash curl ip-full wget
-iptables-mod-tproxy nftables-json openssh-sftp-server nano mc htop
-```
-
-> `kmod-nft-tproxy` — **обязательно** включить в прошивку. Без него nftables TPROXY не работает.
-> Если забыл — можно доустановить: `apk add kmod-nft-tproxy` (после фикса wget).
-
-1. Скачай `*-squashfs-sysupgrade.bin`
-
----
-
-### Шаг 2. Прошивка через U-Boot
-
-1. LAN-кабель: ПК → LAN-порт роутера
-2. Статический IP на ПК: `192.168.1.2 / 255.255.255.0 / GW 192.168.1.1`
-3. Выключи роутер → зажми Reset → включи, держи ~5 сек до быстрого мигания LED
-4. Открой `http://192.168.1.1` → загрузи `sysupgrade.bin` → Update
-5. Жди 3–5 минут, не отключай питание
-
----
-
-### Шаг 3. Первые шаги после прошивки
-
-```sh
-ssh root@192.168.1.1
-```
-
-#### 3.1 Фикс wget (без этого apk update не работает)
-
-```sh
-# wget симлинкован на wget-nossl (без HTTPS) — заменяем на uclient-fetch
-ln -sf /bin/uclient-fetch /usr/bin/wget
-
-# Проверка
-apk update
-```
-
-#### 3.2 Установка пакетов (если не были в прошивке)
-
-```sh
-apk add kmod-nft-tproxy iptables-nft
-```
-
----
-
-### Шаг 4. Установка SSClash
-
-```sh
-apk add luci-app-ssclash
-```
-
----
-
-### Шаг 5. Загрузка конфига
-
-```sh
-# С ПК
-scp config.yaml root@192.168.1.1:/opt/clash/config.yaml
-
-# На роутере
-/etc/init.d/clash enable
-/etc/init.d/clash start
-```
-
-Проверка:
-
-```sh
-logread | grep 'clash-rules' | tail -5
-# Ожидается: "nftables rules applied successfully"
-```
-
----
-
-### Шаг 6. Настройка AdGuard Home
-
-1. Открой `http://192.168.1.1:3000`
-2. Пройди мастер: DNS `0.0.0.0:53`, веб `0.0.0.0:3000`
-3. Запусти патч-скрипт (см. раздел выше)
-
----
-
-### Шаг 7. Установка Proxy Optimizer
-
-```sh
-scp -r patches/ root@192.168.1.1:/tmp/patches/
-ssh root@192.168.1.1 "chmod +x /tmp/patches/setup-cf-optimizer.sh && /tmp/patches/setup-cf-optimizer.sh"
-```
-
----
-
-### Шаг 8. Проверка
-
-```sh
-# Сервисы запущены
-/etc/init.d/clash status
-/etc/init.d/adguardhome status
-
-# Порты
-ss -tlunp | grep -E ':53|:1053|:7894|:3000|:9090'
-
-# DNS
-nslookup gemini.google.com 127.0.0.1  # → 198.18.x.x (fake-ip → прокси)
-nslookup yandex.ru 127.0.0.1          # → реальный IP (direct)
-
-# DPI bypass активен
-nft list table inet cf_dpi_bypass
-
-# Latency monitor + watchdog
-cat /var/run/latency-monitor.status
-cat /var/run/mihomo-watchdog.status
-```
-
----
-
 ## Безопасность
 
 ### Mihomo REST API (порт 9090)
@@ -632,12 +644,14 @@ cat /var/run/mihomo-watchdog.status
 API **защищён токеном**. Без заголовка `Authorization: Bearer <secret>` все запросы отклоняются.
 
 Токен задаётся в `config.yaml`:
+
 ```yaml
 external-controller: 0.0.0.0:9090
 secret: "YOUR_API_SECRET"
 ```
 
 И в UCI (для скриптов):
+
 ```sh
 uci set cf_optimizer.main.mihomo_secret="YOUR_API_SECRET"
 uci commit cf_optimizer
@@ -648,6 +662,7 @@ uci commit cf_optimizer
 ### Аутентификация SOCKS5/HTTP прокси
 
 Пароль прокси задаётся в `config.yaml:authentication` — **отдельный**, не совпадающий с SSH-паролем:
+
 ```yaml
 authentication:
   - "user:YOUR_PROXY_PASSWORD"   # не SSH-пароль!
@@ -726,20 +741,50 @@ dns:
   enhanced-mode: fake-ip
   ipv6: false
 
+# Прокси-провайдеры (вместо 70+ индивидуальных прокси)
+proxy-providers:
+  PrivateVPN:
+    type: http
+    url: "https://accessbyme.com/multiserver.php?access=..."
+    interval: 3600
+
+  ARZA:
+    type: http
+    url: "https://sub.arza.top/..."
+    interval: 3600
+    proxy: "PrvtVPN All Auto"   # ← загружается через VPN (URL заблокирован в РФ)
+
 proxy-groups:
   # Selector-группа — Latency Monitor управляет выбором
   - name: "🤖 GEMINI"
     type: select
-    proxies:
-      - "🇩🇪 Германия · WS"
-      - "🇳🇱 Netherlands · VLESS"
+    use: [PrivateVPN]
+    filter: "^(?!.*(Russia|Россия|Kazakhstan|Казахстан|Armenia|WARP|AWG)).*$"
 
-  # url-test — Mihomo управляет сам, Latency Monitor только читает
+  # url-test — автовыбор лучшего PrivateVPN (без СНГ/торрент)
   - name: "PrvtVPN All Auto"
     type: url-test
-    proxies:
-      - "Server1"
-      - "Server2"
+    use: [PrivateVPN]
+    filter: "^(?!.*(Russia|Россия|Kazakhstan|Казахстан|Armenia|Torrent|WARP|AWG)).*$"
+    interval: 120
+
+  # url-test — автовыбор лучшего ARZA
+  - name: "ARZA Auto"
+    type: url-test
+    use: [ARZA]
+    filter: "^(?!.*(Armenia|Истекает|Купить|Torrent)).*$"
+    interval: 120
+
+  # Основной прокси — ручной выбор источника
+  - name: "🎯 MAIN-PROXY"
+    type: select
+    proxies: ["PrvtVPN All Auto", "ARZA Auto"]
+    use: [PrivateVPN, ARZA]
+
+  # Telegram/Discord — через AWG WireGuard
+  - name: "✈️ TELEGRAM"
+    type: url-test
+    proxies: ["AWG 1.5 (1 Вариант)", "AWG 1.5 (2 Вариант)", "AWG 1.5 (3 Вариант)"]
 ```
 
 ---
@@ -795,7 +840,7 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 ## Известные проблемы и решения
 
 | Проблема | Причина | Решение |
-|---------|---------|---------|
+| ------- | ------- | ------- |
 | `apk update` — "unexpected end of file" | `wget` → `wget-nossl` (без HTTPS) | `ln -sf /bin/uclient-fetch /usr/bin/wget` |
 | `Error: Could not process rule: No such file or directory` | `kmod-nft-tproxy` не установлен | `apk add kmod-nft-tproxy` |
 | `ERROR: Neither nftables nor iptables found` | `iptables` не установлен | `apk add iptables-nft` |
@@ -808,45 +853,9 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 | `ss -tulnp` возвращает пусто | `iproute2` не установлен | `apk add iproute2` или использовать `netstat -tulnp` |
 | Google / Gemini видит российский IP, хотя прокси настроен | CLASH_MARK помечал только `198.18.0.0/16` — домены в `fake-ip-filter` получают реальный IP и обходили TPROXY | `setup-clash.sh` патчит `clash-rules`: добавляет mark-all правила после fake-ip-specific |
 | `ru_critical` rule-provider не загружается (count=0) | Формат файла `.txt`, но нет `format: text` в конфиге — Mihomo парсит как YAML | Добавить `format: text` и `path:` в блок провайдера в `config.yaml` |
-
----
-
-## Файл дерева (актуальное)
-
-```
-Router/
-├── README.md
-├── config.example.yaml               # шаблон конфига Mihomo (все секреты заменены плейсхолдерами)
-├── adguardhome/
-│   └── config.yaml                   # конфиг AdGuard Home
-└── patches/
-    ├── setup-cf-optimizer.sh         # главный установщик Proxy Optimizer
-    ├── setup-adguardhome.sh          # патч конфига AGH
-    │
-    ├── latency-monitor.sh            # мониторинг задержек + автопереключение GEMINI (с гистерезисом)
-    ├── latency-start.sh              # trigger-файл для LuCI-кнопки (cron ≤1 мин)
-    ├── mihomo-watchdog.sh            # watchdog: restart clash + cf-optimizer при сбое
-    ├── log-rotate.sh                 # ротация логов (tmpfs /var/log)
-    ├── geo-update.sh                 # обновление geo-баз + полный перезапуск
-    ├── xray-control.sh               # управление Xray fragment proxy
-    ├── xray-install.sh               # загрузка Xray aarch64 с GitHub
-    │
-    ├── 98-telegram-tproxy.nft        # Telegram MTProto TPROXY (149.154.x.x / 91.108.x.x)
-    ├── 99-cf-dpi-bypass.nft          # DPI bypass через nftables MSS clamp
-    ├── 99-router-mem.conf            # sysctl: оптимизация RAM
-    │
-    ├── cf-ip-update.sh               # поиск лучшего CF edge IP (только CDN; не в репо — .gitignore)
-    ├── sni-scan.sh                   # тест SNI через туннель Mihomo (только CDN)
-    ├── wifi-optimize.sh              # максимизация WiFi мощности
-    │
-    └── luci/
-        ├── menu.d/luci-app-cf-optimizer.json
-        ├── menu.d/luci-app-adguardhome.json
-        ├── acl.d/luci-app-cf-optimizer.json
-        ├── view/cf-optimizer/main.js      # Overview
-        ├── view/cf-optimizer/settings.js  # Settings
-        └── view/adguardhome/dashboard.js
-```
+| `setup-clash.sh` — SSClash не устанавливается (404) | Скрипт генерировал неверное имя APK (`ssclash_*_aarch64*.apk`), которого никогда не существовало | Исправлено: скачивается `luci-app-ssclash-X.Y.Z-r1.apk` — единственный APK во всех релизах SSClash |
+| `Text file busy` при обновлении Mihomo | Mihomo запущен — бинарь заблокирован ОС при перезаписи | Исправлено: `setup-clash.sh` останавливает сервис перед заменой бинаря |
+| После установки `install.sh` сменился пароль роутера | `setup-adguardhome.sh` содержал хардкоженный пароль и вызывал `passwd root` | Исправлено: пароль запрашивается интерактивно, нет хардкода |
 
 ---
 
@@ -858,6 +867,7 @@ Router/
 **Не сохраняется:** пакеты `apk` (kmod-nft-tproxy, iptables-nft, wget-симлинк).
 
 После обновления:
+
 ```sh
 ln -sf /bin/uclient-fetch /usr/bin/wget
 apk update
