@@ -23,6 +23,7 @@ deploy.py
 
 # Приватный аудит безопасности (содержит секреты и детали уязвимостей)
 SECURITY-AUDIT.md
+PROJECT_AUDIT_REPORT.md
 
 # Только для прокси за Cloudflare CDN (персональный, не универсальный)
 patches/cf-ip-update.sh
