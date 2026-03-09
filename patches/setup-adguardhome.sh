@@ -38,10 +38,10 @@ _PLACEHOLDER_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 # ============================================================
 if [ -z "$ROUTER_PASS" ]; then
     printf "Введите пароль (SSH/LuCI + AdGuard Home): "
-    stty -echo 2>/dev/null || true
-    read -r ROUTER_PASS
-    stty echo 2>/dev/null || true
-    echo ""
+    stty -echo < /dev/tty 2>/dev/null || true
+    read -r ROUTER_PASS < /dev/tty
+    stty echo < /dev/tty 2>/dev/null || true
+    printf "\n"
 fi
 [ -z "$ROUTER_PASS" ] && echo "ОШИБКА: пароль не задан" && exit 1
 

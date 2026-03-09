@@ -93,16 +93,16 @@ echo ""
 ROUTER_PASS=""
 while [ -z "$ROUTER_PASS" ]; do
     printf "    Введите пароль: "
-    stty -echo 2>/dev/null || true
-    read -r ROUTER_PASS
-    stty echo 2>/dev/null || true
-    echo ""
+    stty -echo < /dev/tty 2>/dev/null || true
+    read -r ROUTER_PASS < /dev/tty
+    stty echo < /dev/tty 2>/dev/null || true
+    printf "\n"
     [ -z "$ROUTER_PASS" ] && echo "    Пароль не может быть пустым." && continue
     printf "    Подтвердите пароль: "
-    stty -echo 2>/dev/null || true
-    read -r _PASS2
-    stty echo 2>/dev/null || true
-    echo ""
+    stty -echo < /dev/tty 2>/dev/null || true
+    read -r _PASS2 < /dev/tty
+    stty echo < /dev/tty 2>/dev/null || true
+    printf "\n"
     if [ "$ROUTER_PASS" != "$_PASS2" ]; then
         echo "    Пароли не совпадают. Попробуйте ещё раз."
         ROUTER_PASS=""
