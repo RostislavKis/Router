@@ -258,8 +258,8 @@ sed -i '/mihomo-watchdog/d' "$CRON_FILE" 2>/dev/null || true
 sed -i '/log-rotate/d'      "$CRON_FILE" 2>/dev/null || true
 sed -i '/geo-update/d'      "$CRON_FILE" 2>/dev/null || true
 
-# Latency monitor: every 2 hours
-echo "0 */2 * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
+# Latency monitor: every 15 minutes
+echo "*/15 * * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
 # Latency trigger: check every minute (for LuCI "Run now" button)
 echo "* * * * * [ -f /var/run/latency-trigger ] && rm -f /var/run/latency-trigger && /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
 # Mihomo watchdog: every 10 minutes
@@ -274,7 +274,7 @@ echo "0 */6 * * * /usr/local/bin/cf-ip-update.sh >> /var/log/cf-ip-update.log 2>
 echo "30 2 * * * /usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1" >> "$CRON_FILE"
 
 /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || true
-echo "    latency monitor:   every 2h + LuCI trigger (1 min)"
+echo "    latency monitor:   every 15 min + LuCI trigger (1 min)"
 echo "    mihomo watchdog:   every 10 min"
 echo "    log rotation:      daily 03:00"
 echo "    geo update:        weekly Sun 04:00"
@@ -411,7 +411,7 @@ echo " LuCI: Services > Proxy Optimizer"
 echo ""
 echo " Что включено по умолчанию:"
 echo "   [FIX] NTP Boot Loop Protection — 0/1.pool.ntp.org + time.google.com + time.cloudflare.com"
-echo "   [ON]  Latency Monitor  — GEMINI каждые 2 часа (гистерезис ${SWITCH_THRESHOLD}%)"
+echo "   [ON]  Latency Monitor  — GEMINI каждые 15 мин (гистерезис ${SWITCH_THRESHOLD}%)"
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
 echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"
 echo "   [ON]  Geo Update       — geoip/geosite раз в неделю"

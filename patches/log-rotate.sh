@@ -25,3 +25,4 @@ rotate_log /var/log/latency-monitor.log
 rotate_log /var/log/cf-ip-update.log
 rotate_log /var/log/sni-scan.log
 rotate_log /var/log/mihomo-watchdog.log
+rotate_log /var/log/xray-fragment.log

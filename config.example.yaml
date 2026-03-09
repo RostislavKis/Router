@@ -13,10 +13,10 @@
 #   YOUR_NEXTDNS_ID        — ID профиля NextDNS (cffd45 и т.п.)
 #   YOUR_TROJAN_PASSWORD   — пароль Trojan-прокси
 
-mmdb-path: /opt/clash/geoip.db
+mmdb-path: /opt/clash/country.mmdb
 geodata-url:
-  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.db"
-  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.db"
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
 
 mixed-port: 7890
 socks-port: 7891

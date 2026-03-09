@@ -26,12 +26,17 @@ MIHOMO_API="${MIHOMO_API:-http://127.0.0.1:9090}"
 MIHOMO_SOCKS="${MIHOMO_SOCKS:-127.0.0.1:7891}"
 CONFIG_FILE="${CONFIG_FILE:-/opt/clash/config.yaml}"
 
-# --- Защита от параллельного запуска ---
+# --- Защита от параллельного запуска (PID-based stale detection) ---
 if [ -f "$LOCK_FILE" ]; then
-    logger -t "$LOG_TAG" "Already running, skipping"
-    exit 0
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+    if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+        logger -t "$LOG_TAG" "Already running (PID=$lock_pid), skipping"
+        exit 0
+    fi
+    logger -t "$LOG_TAG" "Stale lock found (PID=${lock_pid:-?} dead), removing"
+    rm -f "$LOCK_FILE"
 fi
-touch "$LOCK_FILE"
+echo $$ > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT INT TERM
 
 logger -t "$LOG_TAG" "Starting SNI scan via Mihomo SOCKS5 ($MIHOMO_SOCKS)"

@@ -16,7 +16,7 @@
 #   150 байт — баланс защиты и скорости (рекомендуется)
 #   200 байт — минимальная фрагментация, почти без влияния на задержку
 #
-# Применить вручную: nft -f /etc/nftables.d/99-cf-dpi-bypass.nft
+# Применить вручную: nft -f /etc/cf-optimizer/99-cf-dpi-bypass.nft
 # Удалить:          nft delete table inet cf_dpi_bypass
 
 table inet cf_dpi_bypass {

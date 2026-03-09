@@ -195,24 +195,52 @@ switch_group() {
 }
 
 # ================================================================
-# Test Gemini API accessibility through the currently active SOCKS5 proxy.
+# Test Gemini web accessibility through the currently active GEMINI proxy.
 # Call AFTER switch_group + sleep 2 to let Mihomo update routing.
 #
-# Logic: GET /v1beta/models?key=placeholder
-#   - IP accessible → Google returns 400/401 (bad key, but reachable)
-#   - IP geo-blocked → Google returns body with "location is not supported"
-#   - Timeout / no response → proxy down
+# Logic: HEAD gemini.google.com + check GDPR consent redirect + gl= code
+#   - IP detected as EU/allowed → Google redirects to consent.google.com?gl=XX
+#     where XX is a non-blocked country code
+#   - Russian/CIS IP → consent redirect with gl=RU/BY/KZ → BLOCKED
+#   - Blacklisted datacenter IP → 200 directly, no consent redirect → BLOCKED
+#   - Timeout / no response → proxy down → BLOCKED
 #
-# Returns: 0 = Gemini accessible, 1 = geo-blocked or unreachable
+# Returns: 0 = Gemini accessible, 1 = blocked or unreachable
 # ================================================================
 gemini_access_ok() {
-    local response
-    response=$(curl -sf --max-time 8 \
-        --socks5-hostname "$MIHOMO_SOCKS" \
-        "https://generativelanguage.googleapis.com/v1beta/models?key=placeholder" \
-        2>/dev/null)
+    local response proxy_auth location gl_code
+    # Test via Mihomo HTTP proxy (127.0.0.1:7890) — HEAD request to gemini.google.com.
+    # Direct curl via TPROXY doesn't work for router-originated traffic:
+    # fake-ip dst → kernel routes via pppoe-wan → oifname "pppoe-wan" return
+    # in OUTPUT mangle chain → fwmark not set → packet exits WAN directly → timeout.
+    # User-Agent header required — without it Google may skip the consent redirect.
+    proxy_auth=$(awk '
+        /^authentication:/ { in_auth=1; next }
+        in_auth && /^  - "/ { sub(/^  - "/, ""); sub(/".*/, ""); print; exit }
+        in_auth && !/^  / { exit }
+    ' /opt/clash/config.yaml 2>/dev/null)
+    if [ -n "$proxy_auth" ]; then
+        response=$(curl -s --max-time 8 \
+            --proxy "http://127.0.0.1:7890" \
+            --proxy-user "$proxy_auth" \
+            -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://gemini.google.com/" 2>/dev/null)
+    else
+        response=$(curl -s --max-time 8 \
+            --proxy "http://127.0.0.1:7890" \
+            -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://gemini.google.com/" 2>/dev/null)
+    fi
     [ -z "$response" ] && return 1
-    echo "$response" | grep -qi "location is not supported\|User location" && return 1
+    # Must redirect to consent.google.com (EU/allowed geo) — direct 200 means blocked datacenter IP
+    location=$(echo "$response" | grep -i "location:.*consent.google.com" | head -1)
+    [ -z "$location" ] && return 1
+    # Extract gl= country code and reject Russia/CIS where Gemini is blocked
+    gl_code=$(echo "$location" | grep -oi 'gl=[A-Za-z][A-Za-z]' | head -1 | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
+    case "$gl_code" in
+        RU|BY|KZ) return 1 ;;
+    esac
+    GEMINI_GL_CODE="${gl_code:-?}"
     return 0
 }
 
@@ -296,8 +324,9 @@ PROXYEOF
             [ -z "$px" ] && continue
             switch_group "$GEMINI_GROUP" "$px"
             sleep 2
+            GEMINI_GL_CODE="?"
             if gemini_access_ok; then
-                logger -t "$LOG_TAG" "  [gemini-ok]      '${px}' (${d}ms)"
+                logger -t "$LOG_TAG" "  [gemini-ok]      '${px}' (${d}ms) gl=${GEMINI_GL_CODE}"
                 best_proxy="$px"
                 best_delay=$d
                 validated=1
@@ -340,8 +369,14 @@ CEOF
     fi
 
     # ── Hysteresis check ──────────────────────────────────────────────────────
+    # Skip hysteresis if best_proxy was geo-validated (phase 2) but current was not.
+    # This ensures we always switch away from a geo-blocked current proxy.
     local threshold_delay
-    if [ "$current_delay" -lt 9000 ] 2>/dev/null; then
+    if [ "${validated:-0}" = "1" ] && [ "$best_proxy" != "$current_proxy" ]; then
+        # best_proxy passed geo-check; current may be geo-blocked → switch unconditionally
+        threshold_delay=9999
+        logger -t "$LOG_TAG" "GEMINI: geo-validated proxy found → switching unconditionally (bypassing hysteresis)"
+    elif [ "$current_delay" -lt 9000 ] 2>/dev/null; then
         threshold_delay=$(awk "BEGIN { printf \"%d\", $current_delay * (100 - $SWITCH_THRESHOLD) / 100 }")
         logger -t "$LOG_TAG" "GEMINI: switch threshold = ${threshold_delay}ms (${SWITCH_THRESHOLD}% below ${current_delay}ms)"
     else

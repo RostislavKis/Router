@@ -87,9 +87,19 @@ return view.extend({
 		o.placeholder = 'FI,DE,NL';
 		o.description = _('Коды стран через запятую');
 
+		o = s.option(form.Value, 'proxy_name', _('Имя прокси в Mihomo'));
+		o.placeholder = 'YOUR_PROXY_NAME';
+		o.description = _('Точное имя VLESS/Trojan прокси из proxies: секции config.yaml. Используется SNI Scanner и CF IP Updater.');
+
 		o = s.option(form.Value, 'update_threshold', _('Порог обновления IP (%)'));
 		o.placeholder = '20';
 		o.datatype = 'range(1, 100)';
+		o.description = _('Обновлять IP только если новый быстрее текущего на X%.');
+
+		o = s.option(form.Value, 'limit_per_region', _('IP на регион'));
+		o.placeholder = '10';
+		o.datatype = 'range(1, 100)';
+		o.description = _('Сколько IP получать от Worker API для каждого региона.');
 
 		/* ── Mihomo API ── */
 		s = m.section(form.NamedSection, 'main', 'cf_optimizer', _('Mihomo API'));
