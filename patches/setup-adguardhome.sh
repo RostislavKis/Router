@@ -48,6 +48,23 @@ fi
 echo "==> AdGuard Home: настройка"
 echo ""
 
+# --- 0. Проверяем / устанавливаем AdGuard Home ---
+echo "==> [0/7] Проверка AdGuard Home"
+if ! command -v adguardhome >/dev/null 2>&1 && [ ! -f /usr/bin/adguardhome ] && [ ! -f /opt/adguardhome/AdGuardHome ]; then
+    echo "    AdGuard Home не установлен — устанавливаем..."
+    if apk add adguardhome 2>&1 | grep -qE '(Installing|already)'; then
+        /etc/init.d/adguardhome enable 2>/dev/null || true
+        echo "    adguardhome — установлен"
+    else
+        echo "ОШИБКА: не удалось установить AdGuard Home."
+        echo "       Установите вручную: apk add adguardhome"
+        echo "       Затем повторите: $0"
+        exit 1
+    fi
+else
+    echo "    AdGuard Home — уже установлен"
+fi
+
 # --- 1. Установка паролей root (SSH/LuCI) и AdGuard Home ---
 echo "==> [1/7] Установка пароля root (SSH/LuCI)"
 printf '%s\n%s\n' "$ROUTER_PASS" "$ROUTER_PASS" | passwd root 2>/dev/null \
@@ -185,8 +202,27 @@ fi
 echo ""
 echo "==> Перезапуск AdGuard Home..."
 /etc/init.d/adguardhome restart
-sleep 2
-/etc/init.d/adguardhome status 2>/dev/null && echo "    AGH запущен" || echo "    WARNING: AGH не запущен"
+sleep 3
+
+# Проверяем что AGH запустился — если нет, откатываем dnsmasq (иначе интернет пропадёт)
+if /etc/init.d/adguardhome status 2>/dev/null | grep -q running; then
+    echo "    AGH запущен"
+else
+    echo ""
+    echo "КРИТИЧНО: AdGuard Home не запустился!"
+    echo "Откатываем dnsmasq на порт 53 для сохранения интернета..."
+    uci set dhcp.@dnsmasq[0].port='53'
+    uci commit dhcp
+    /etc/init.d/dnsmasq restart 2>/dev/null || true
+    echo "dnsmasq восстановлен (порт 53) — интернет работает"
+    echo ""
+    echo "Диагностика AGH:"
+    echo "  /etc/init.d/adguardhome status"
+    echo "  logread | grep -i adguard | tail -20"
+    echo ""
+    echo "После исправления повторите: $0"
+    exit 1
+fi
 
 # --- 6. LuCI: устанавливаем меню и iframe-страницу ---
 echo ""
