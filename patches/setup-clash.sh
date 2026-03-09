@@ -28,11 +28,7 @@
 
 set -e
 
-SSCLASH_VERSION="3.5.0"
 SSCLASH_ARCH="aarch64_cortex-a53"
-
-MIHOMO_VERSION="v1.19.20"
-MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-arm64-${MIHOMO_VERSION}.gz"
 
 GEOIP_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
 GEOSITE_URL="https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
@@ -42,28 +38,31 @@ echo "==> SSClash + Mihomo: установка"
 echo ""
 
 # --- 1. Исправление wget ---
-echo "==> [1/6] Исправление wget (uclient-fetch, поддержка HTTPS)"
+echo "==> [1/7] Исправление wget (uclient-fetch, поддержка HTTPS)"
 ln -sf /bin/uclient-fetch /usr/bin/wget
 echo "    wget -> uclient-fetch"
 
 # --- 2. Модуль ядра для TPROXY ---
 echo ""
-echo "==> [2/6] Установка kmod-nft-tproxy"
+echo "==> [2/7] Установка kmod-nft-tproxy"
 apk update >/dev/null 2>&1 || true
 apk add kmod-nft-tproxy 2>&1 | grep -E '(Installing|OK|already)' || true
 echo "    kmod-nft-tproxy — ОК"
 
-# --- 3. SSClash APK-пакеты ---
+# --- 3. SSClash APK-пакеты (последний релиз) ---
 echo ""
-echo "==> [3/6] Установка SSClash ${SSCLASH_VERSION}"
+echo "==> [3/7] Установка SSClash (последний релиз)"
 
-# Получаем URL пакетов из GitHub Releases API
-echo "    Поиск пакетов на GitHub..."
+echo "    Запрос GitHub API..."
 RELEASE_JSON=$(uclient-fetch -q -O - \
-    "https://api.github.com/repos/zerolabnet/SSClash/releases/tags/v${SSCLASH_VERSION}" \
+    "https://api.github.com/repos/zerolabnet/SSClash/releases/latest" \
     2>/dev/null) || RELEASE_JSON=""
 
-# Извлекаем URL пакетов из JSON (ищем все .apk ссылки)
+SSCLASH_VERSION=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$SSCLASH_VERSION" ] \
+    && echo "    Найден релиз: $SSCLASH_VERSION" \
+    || echo "    (GitHub API не ответил — попробуем по-другому)"
+
 SSCLASH_APK_URL=$(echo "$RELEASE_JSON" | \
     grep -o 'https://github.com/[^"]*\.apk' | \
     grep "${SSCLASH_ARCH}" | grep -v 'luci' | head -1)
@@ -72,17 +71,30 @@ LUCI_APK_URL=$(echo "$RELEASE_JSON" | \
     grep -o 'https://github.com/[^"]*\.apk' | \
     grep 'luci-app-ssclash' | head -1)
 
-# Fallback URLs если API не дал результатов
+# Fallback: если API недоступен — пробуем получить URL через редирект страницы latest
 if [ -z "$SSCLASH_APK_URL" ]; then
-    SSCLASH_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/v${SSCLASH_VERSION}/ssclash_${SSCLASH_VERSION}-r1_${SSCLASH_ARCH}.apk"
-    echo "    (GitHub API не ответил, используем стандартный URL)"
+    echo "    Пробуем через страницу releases/latest..."
+    RELEASES_HTML=$(uclient-fetch -q -O - \
+        "https://github.com/zerolabnet/SSClash/releases/latest" \
+        2>/dev/null) || RELEASES_HTML=""
+    SSCLASH_APK_URL=$(echo "$RELEASES_HTML" | \
+        grep -o '/zerolabnet/SSClash/releases/download/[^"]*'"${SSCLASH_ARCH}"'[^"]*\.apk' | \
+        grep -v 'luci' | head -1)
+    [ -n "$SSCLASH_APK_URL" ] && SSCLASH_APK_URL="https://github.com${SSCLASH_APK_URL}"
+    LUCI_APK_URL=$(echo "$RELEASES_HTML" | \
+        grep -o '/zerolabnet/SSClash/releases/download/[^"]*luci-app-ssclash[^"]*\.apk' | head -1)
+    [ -n "$LUCI_APK_URL" ] && LUCI_APK_URL="https://github.com${LUCI_APK_URL}"
 fi
-if [ -z "$LUCI_APK_URL" ]; then
-    LUCI_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/v${SSCLASH_VERSION}/luci-app-ssclash_${SSCLASH_VERSION}-r1_all.apk"
+
+if [ -z "$SSCLASH_APK_URL" ]; then
+    echo "    ОШИБКА: не удалось получить URL SSClash."
+    echo "    Скачайте вручную с https://github.com/zerolabnet/SSClash/releases/latest"
+    echo "    Нужны файлы: ssclash_*_${SSCLASH_ARCH}.apk и luci-app-ssclash_*_all.apk"
+    exit 1
 fi
 
 echo "    ssclash: $(basename "$SSCLASH_APK_URL")"
-echo "    luci:    $(basename "$LUCI_APK_URL")"
+[ -n "$LUCI_APK_URL" ] && echo "    luci:    $(basename "$LUCI_APK_URL")"
 echo ""
 
 uclient-fetch -O /tmp/ssclash.apk "$SSCLASH_APK_URL"
@@ -90,17 +102,47 @@ apk add --allow-untrusted /tmp/ssclash.apk
 rm -f /tmp/ssclash.apk
 echo "    ssclash — установлен"
 
-uclient-fetch -O /tmp/luci-app-ssclash.apk "$LUCI_APK_URL"
-apk add --allow-untrusted /tmp/luci-app-ssclash.apk
-rm -f /tmp/luci-app-ssclash.apk
-echo "    luci-app-ssclash — установлен"
+if [ -n "$LUCI_APK_URL" ]; then
+    uclient-fetch -O /tmp/luci-app-ssclash.apk "$LUCI_APK_URL"
+    apk add --allow-untrusted /tmp/luci-app-ssclash.apk
+    rm -f /tmp/luci-app-ssclash.apk
+    echo "    luci-app-ssclash — установлен"
+else
+    echo "    luci-app-ssclash — пропущен (URL не найден, установите вручную)"
+fi
 
-# --- 4. Бинарник Mihomo ---
+# --- 4. Бинарник Mihomo (последний релиз) ---
 echo ""
-echo "==> [4/6] Установка Mihomo ${MIHOMO_VERSION} → /opt/clash/bin/clash"
+echo "==> [4/7] Установка Mihomo (последний релиз) → /opt/clash/bin/clash"
 # SSClash ожидает бинарник именно с именем 'clash', не 'mihomo'
 mkdir -p /opt/clash/bin /opt/clash/logs
 
+echo "    Запрос GitHub API..."
+MIHOMO_JSON=$(uclient-fetch -q -O - \
+    "https://api.github.com/repos/MetaCubeX/mihomo/releases/latest" \
+    2>/dev/null) || MIHOMO_JSON=""
+
+MIHOMO_VERSION=$(echo "$MIHOMO_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$MIHOMO_VERSION" ] && echo "    Версия: $MIHOMO_VERSION"
+
+MIHOMO_URL=$(echo "$MIHOMO_JSON" | \
+    grep -o 'https://github.com/[^"]*mihomo-linux-arm64-[^"]*\.gz' | \
+    grep -v 'alpha\|beta\|compatible' | head -1)
+
+# Fallback: собираем URL из версии, если API дал тег но не ссылку
+if [ -z "$MIHOMO_URL" ] && [ -n "$MIHOMO_VERSION" ]; then
+    MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/mihomo-linux-arm64-${MIHOMO_VERSION}.gz"
+    echo "    (URL из тега: $MIHOMO_VERSION)"
+fi
+
+if [ -z "$MIHOMO_URL" ]; then
+    echo "    ОШИБКА: не удалось получить URL Mihomo."
+    echo "    Скачайте вручную с https://github.com/MetaCubeX/mihomo/releases/latest"
+    echo "    Нужен файл: mihomo-linux-arm64-*.gz"
+    exit 1
+fi
+
+echo "    URL: $(basename "$MIHOMO_URL")"
 uclient-fetch -O /tmp/mihomo.gz "$MIHOMO_URL"
 gunzip -c /tmp/mihomo.gz > /opt/clash/bin/clash
 chmod 755 /opt/clash/bin/clash
@@ -110,7 +152,7 @@ echo "    $(/opt/clash/bin/clash -v 2>&1 | head -1)"
 
 # --- 5. Geo-базы ---
 echo ""
-echo "==> [5/6] Загрузка geo-баз данных"
+echo "==> [5/7] Загрузка geo-баз данных"
 
 download_geo() {
     local url="$1" dest="$2"
@@ -195,7 +237,7 @@ fi
 
 echo ""
 echo "=================================================="
-echo " SSClash ${SSCLASH_VERSION} установлен!"
+echo " SSClash ${SSCLASH_VERSION:-latest} установлен!"
 echo " Бинарник: /opt/clash/bin/clash"
 echo " Init.d:   /etc/init.d/clash  (START=21)"
 echo "=================================================="

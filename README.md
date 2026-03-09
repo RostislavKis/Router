@@ -47,7 +47,7 @@ Mihomo DNS :1053  (fake-ip mode, 198.18.0.0/16)
 | Компонент | Версия | Назначение |
 |-----------|--------|-----------|
 | OpenWrt | 25.12.0 r32713-f919e7899d | ОС роутера (aarch64, mediatek/filogic) |
-| SSClash / Mihomo | v1.19.20 | TPROXY + fake-ip DNS, порт 7894 |
+| SSClash / Mihomo | latest | TPROXY + fake-ip DNS, порт 7894 |
 | AdGuard Home | latest | DNS-фильтрация, порт 53 / UI 3000 |
 | LuCI | openwrt-25.12 branch 26.064.72454~b89e6b3 | Веб-интерфейс управления |
 | Proxy Optimizer | — | Набор скриптов оптимизации и стабилизации (patches/) |
