@@ -131,9 +131,67 @@ download_geo "$MMDB_URL"    /opt/clash/country.mmdb
 
 # --- 6. Включение сервиса ---
 echo ""
-echo "==> [6/6] Включение сервиса SSClash"
+echo "==> [6/7] Включение сервиса SSClash"
 /etc/init.d/clash enable
 echo "    clash service enabled (START=21)"
+
+# --- 7. Патч clash-rules: пометить ВЕСЬ трафик через TPROXY ---
+# Проблема: CLASH_MARK по умолчанию помечает только 198.18.0.0/16 (fake-ip range),
+# когда задан fake-ip-range в конфиге. Домены из fake-ip-filter получают от Mihomo
+# реальный IP — и их соединения обходят TPROXY, уходя напрямую с IP провайдера.
+# Это ломает обход блокировок: Google видит российский IP даже при настроенном прокси.
+#
+# Решение: добавить mark-all правила ПОСЛЕ fake-ip-specific правил. Оба сосуществуют
+# (одинаковый mark 0x0001, нет конфликта). fake-ip трафик матчится первым правилом,
+# реальный IP из fake-ip-filter — catch-all правилом.
+echo ""
+echo "==> [7/7] Патч clash-rules: полное покрытие TPROXY"
+CR="/opt/clash/bin/clash-rules"
+
+if grep -q 'real-IP TPROXY' "$CR" 2>/dev/null; then
+    echo "    Уже запатчено — пропускаем"
+elif [ ! -f "$CR" ]; then
+    echo "    WARNING: $CR не найден — пропускаем"
+else
+    cat > /tmp/patch-cr.awk << 'AWKEOF'
+BEGIN { d="$"; s=0; q1=""; q2=""; q3="" }
+{
+    line=$0
+    if (/msg "Marking applied for all traffic/) {
+        q1=""; q2=""; q3=""
+        s=1
+    } else if (s==1 && /^    fi$/) {
+        s=0
+        print "    fi"
+        print "    # Always also mark ALL remaining traffic (real-IP TPROXY, prevents ISP IP leaks)"
+        print "    nft add rule inet clash CLASH_MARK meta l4proto tcp meta mark set 0x0001 counter"
+        printf "    nft add rule inet clash CLASH_MARK meta l4proto udp meta mark set \"%sudp_mark\" counter\n", d
+        print "    msg \"Marking applied for ALL remaining traffic (real-IP TPROXY enabled)\""
+    } else if (s==1) {
+        s=0
+        print line
+    } else {
+        if (q3 != "") print q3
+        q3=q2; q2=q1; q1=line
+    }
+}
+END {
+    if (q3 != "") print q3
+    if (q2 != "") print q2
+    if (q1 != "") print q1
+}
+AWKEOF
+    awk -f /tmp/patch-cr.awk "$CR" > "${CR}.tmp"
+    if grep -q 'real-IP TPROXY' "${CR}.tmp" 2>/dev/null; then
+        mv "${CR}.tmp" "$CR"
+        chmod 755 "$CR"
+        echo "    clash-rules запатчен: весь TCP/UDP трафик идёт через TPROXY"
+    else
+        rm -f "${CR}.tmp"
+        echo "    WARNING: патч не применился (файл мог измениться) — пропускаем"
+    fi
+    rm -f /tmp/patch-cr.awk
+fi
 
 echo ""
 echo "=================================================="

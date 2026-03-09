@@ -30,7 +30,8 @@ Mihomo DNS :1053  (fake-ip mode, 198.18.0.0/16)
     │       ↓ RuleSet(telegram) → ✈️ TELEGRAM [AWG proxy]
     │
     └── Всё остальное
-            ↓ inet clash CLASH_MARK: fake-ip 198.18.x.x → mark=0x1
+            ↓ inet clash CLASH_MARK: ALL TCP/UDP → mark=0x1
+              (fake-ip 198.18.x.x + реальные IP из fake-ip-filter)
             ↓ inet clash proxy (TPROXY) → Mihomo :7894
             ↓ правила из config.yaml:
                 ├──► DIRECT  (Россия: .ru, .рф, .su, банки, госсайты)
@@ -805,6 +806,8 @@ lsmod | grep -E '(tproxy|nft_tproxy)'
 | AGH не скачивает фильтры (таймаут) | `github.io` / `adaway.org` не в `fake-ip-filter` | Уже добавлены в `config.example.yaml` |
 | Дублирование правил `ip rule` | `clash restart` добавляет копии без удаления | Автоматически исправляется при следующем старте `cf-optimizer` |
 | `ss -tulnp` возвращает пусто | `iproute2` не установлен | `apk add iproute2` или использовать `netstat -tulnp` |
+| Google / Gemini видит российский IP, хотя прокси настроен | CLASH_MARK помечал только `198.18.0.0/16` — домены в `fake-ip-filter` получают реальный IP и обходили TPROXY | `setup-clash.sh` патчит `clash-rules`: добавляет mark-all правила после fake-ip-specific |
+| `ru_critical` rule-provider не загружается (count=0) | Формат файла `.txt`, но нет `format: text` в конфиге — Mihomo парсит как YAML | Добавить `format: text` и `path:` в блок провайдера в `config.yaml` |
 
 ---
 
@@ -832,7 +835,7 @@ Router/
     ├── 99-cf-dpi-bypass.nft          # DPI bypass через nftables MSS clamp
     ├── 99-router-mem.conf            # sysctl: оптимизация RAM
     │
-    ├── cf-ip-update.sh               # поиск лучшего CF edge IP (только CDN)
+    ├── cf-ip-update.sh               # поиск лучшего CF edge IP (только CDN; не в репо — .gitignore)
     ├── sni-scan.sh                   # тест SNI через туннель Mihomo (только CDN)
     ├── wifi-optimize.sh              # максимизация WiFi мощности
     │

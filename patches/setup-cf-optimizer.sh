@@ -54,7 +54,13 @@ cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod
 cp "$SCRIPT_DIR/xray-control.sh"      /usr/local/bin/xray-control.sh      && chmod 755 /usr/local/bin/xray-control.sh
 cp "$SCRIPT_DIR/xray-install.sh"      /usr/local/bin/xray-install.sh      && chmod 755 /usr/local/bin/xray-install.sh
 cp "$SCRIPT_DIR/xray-apply-config.sh" /usr/local/bin/xray-apply-config.sh && chmod 755 /usr/local/bin/xray-apply-config.sh
-cp "$SCRIPT_DIR/cf-ip-update.sh"     /usr/local/bin/cf-ip-update.sh     && chmod 755 /usr/local/bin/cf-ip-update.sh
+if [ -f "$SCRIPT_DIR/cf-ip-update.sh" ]; then
+    cp "$SCRIPT_DIR/cf-ip-update.sh" /usr/local/bin/cf-ip-update.sh && chmod 755 /usr/local/bin/cf-ip-update.sh
+else
+    # Заглушка — нужна для cron; если файла нет, команда просто завершается без действий
+    printf '#!/bin/sh\n# cf-ip-update.sh not installed (Cloudflare CDN only)\n' > /usr/local/bin/cf-ip-update.sh
+    chmod 755 /usr/local/bin/cf-ip-update.sh
+fi
 cp "$SCRIPT_DIR/sni-scan.sh"         /usr/local/bin/sni-scan.sh         && chmod 755 /usr/local/bin/sni-scan.sh
 cp "$SCRIPT_DIR/wifi-optimize.sh"    /usr/local/bin/wifi-optimize.sh    && chmod 755 /usr/local/bin/wifi-optimize.sh
 
@@ -65,7 +71,7 @@ echo "    log-rotate.sh       -> /usr/local/bin/"
 echo "    geo-update.sh       -> /usr/local/bin/"
 echo "    xray-control.sh     -> /usr/local/bin/"
 echo "    xray-install.sh     -> /usr/local/bin/"
-echo "    cf-ip-update.sh     -> /usr/local/bin/"
+echo "    cf-ip-update.sh     -> /usr/local/bin/ (stub if not bundled)"
 echo "    sni-scan.sh         -> /usr/local/bin/"
 echo "    wifi-optimize.sh    -> /usr/local/bin/"
 
