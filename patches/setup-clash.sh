@@ -71,7 +71,15 @@ LUCI_APK_URL=$(echo "$RELEASE_JSON" | \
     grep -o 'https://github.com/[^"]*\.apk' | \
     grep 'luci-app-ssclash' | head -1)
 
-# Fallback: если API недоступен — пробуем получить URL через редирект страницы latest
+# Fallback 1: конструируем URL из версии если JSON не дал ссылку (uclient-fetch обрезает длинный JSON)
+if [ -z "$SSCLASH_APK_URL" ] && [ -n "$SSCLASH_VERSION" ]; then
+    VER="${SSCLASH_VERSION#v}"
+    SSCLASH_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/${SSCLASH_VERSION}/ssclash_${VER}_${SSCLASH_ARCH}.apk"
+    LUCI_APK_URL="https://github.com/zerolabnet/SSClash/releases/download/${SSCLASH_VERSION}/luci-app-ssclash_${VER}_all.apk"
+    echo "    (URL из тега: $SSCLASH_VERSION)"
+fi
+
+# Fallback 2: если API не ответил — пробуем получить URL через HTML страницы latest
 if [ -z "$SSCLASH_APK_URL" ]; then
     echo "    Пробуем через страницу releases/latest..."
     RELEASES_HTML=$(uclient-fetch -q -O - \
