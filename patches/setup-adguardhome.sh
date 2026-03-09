@@ -3,15 +3,20 @@
 # Настройка AdGuard Home для работы с Mihomo (SSClash) fake-ip DNS.
 #
 # Что делает:
-#   1. Устанавливает пароль root (LuCI + AGH используют один пароль)
-#   2. Отключает dnsmasq на порту 53 (AGH занимает порт 53)
-#   3. Настраивает DHCP: клиенты получают 192.168.1.1 как DNS-сервер (= AGH)
-#   4. Указывает UCI adguardhome путь к config.yaml
-#   5. Разворачивает конфиг AGH (из шаблона или патчит существующий):
+#   1. Отключает dnsmasq на порту 53 (AGH занимает порт 53)
+#   2. Настраивает DHCP: клиенты получают 192.168.1.1 как DNS-сервер (= AGH)
+#   3. Указывает UCI adguardhome путь к config.yaml
+#   4. Разворачивает конфиг AGH (из шаблона или патчит существующий):
 #      - upstream DNS → Mihomo 127.0.0.1:1053 (fake-ip)
 #      - aaaa_disabled: true (Mihomo работает без IPv6)
-#      - Устанавливает логин/пароль
-#   6. Устанавливает LuCI-страницу AGH (iframe → порт 3000)
+#      - Устанавливает логин/пароль (если задан AGH_PASSWORD_HASH)
+#   5. Устанавливает LuCI-страницу AGH (iframe → порт 3000)
+#
+# Пароль роутера (root/LuCI) скрипт НЕ меняет — задайте его сами:
+#   passwd root
+#
+# Пароль AGH задаётся через AGH_PASSWORD_HASH ниже.
+# Если оставить плейсхолдер — пароль нужно установить вручную через веб-интерфейс AGH (порт 3000).
 #
 # Использование:
 #   chmod +x setup-adguardhome.sh && ./setup-adguardhome.sh
@@ -26,40 +31,33 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGH_CONFIG="/etc/adguardhome/config.yaml"
 
 # ============================================================
-# ПАРОЛЬ РОУТЕРА (используется для LuCI и AGH)
-# Задаётся ОДИН РАЗ — скрипт устанавливает его везде.
+# ПАРОЛЬ AdGuard Home (только AGH, пароль роутера/LuCI не меняется)
 #
-# Для смены пароля:
-#   1. Измените ROUTER_PASSWORD ниже
-#   2. Пересчитайте bcrypt-хэш:
-#      python3 -c "import bcrypt; print(bcrypt.hashpw(b'NEW_PASS', bcrypt.gensalt(10)).decode())"
-#   3. Замените AGH_PASSWORD_HASH
+# Оставьте плейсхолдер — тогда пароль нужно установить вручную
+# через веб-интерфейс AGH: http://192.168.1.1:3000
+#
+# Чтобы задать пароль через скрипт:
+#   1. Пересчитайте bcrypt-хэш своего пароля:
+#      python3 -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASS', bcrypt.gensalt(10)).decode())"
+#   2. Вставьте хэш ниже вместо плейсхолдера
 # ============================================================
-ROUTER_PASSWORD="4bu-j6m-7Bf-5JK"
 AGH_USER="root"
-# bcrypt-хэш от ROUTER_PASSWORD (для AGH):
-AGH_PASSWORD_HASH='$2b$10$lOOoSmdzB2jZQ73mugmktOQ6L//NzV.RGbzGzbND7w6HptAqIkHB.'
+AGH_PASSWORD_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 _PLACEHOLDER_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 # ============================================================
 
 echo "==> AdGuard Home: настройка"
 echo ""
 
-# --- 1. Устанавливаем пароль root (LuCI) ---
-echo "==> [1/6] Установка пароля root (LuCI)"
-printf '%s\n%s\n' "$ROUTER_PASSWORD" "$ROUTER_PASSWORD" | passwd root 2>/dev/null \
-    && echo "    пароль root — установлен" \
-    || echo "    WARNING: не удалось установить пароль root"
-
-# --- 2. dnsmasq: отключаем DNS, оставляем только DHCP ---
+# --- 1. dnsmasq: отключаем DNS, оставляем только DHCP ---
 echo ""
-echo "==> [2/6] dnsmasq: порт 53 → 0 (AGH занимает DNS)"
+echo "==> [1/5] dnsmasq: порт 53 → 0 (AGH занимает DNS)"
 uci set dhcp.@dnsmasq[0].port='0'
 echo "    dnsmasq port=0 (DNS отключён, только DHCP)"
 
-# --- 3. DHCP: клиенты должны использовать роутер как DNS ---
+# --- 2. DHCP: клиенты должны использовать роутер как DNS ---
 echo ""
-echo "==> [3/6] DHCP option 6 → 192.168.1.1 (AGH как DNS для клиентов)"
+echo "==> [2/5] DHCP option 6 → 192.168.1.1 (AGH как DNS для клиентов)"
 # Без этого dnsmasq с port=0 отдаёт клиентам DNS провайдера вместо AGH
 uci -q delete dhcp.lan.dhcp_option 2>/dev/null || true
 uci add_list dhcp.lan.dhcp_option='6,192.168.1.1'
@@ -67,16 +65,16 @@ uci commit dhcp
 /etc/init.d/dnsmasq restart 2>/dev/null || true
 echo "    dhcp_option 6,192.168.1.1 → клиенты получат AGH как DNS"
 
-# --- 4. UCI: указываем путь к конфигу AGH ---
+# --- 3. UCI: указываем путь к конфигу AGH ---
 echo ""
-echo "==> [4/6] UCI adguardhome → $AGH_CONFIG"
+echo "==> [3/5] UCI adguardhome → $AGH_CONFIG"
 uci set adguardhome.config.config_file="$AGH_CONFIG"
 uci commit adguardhome
 echo "    adguardhome.config.config_file=$AGH_CONFIG"
 
-# --- 5. Конфиг AGH ---
+# --- 4. Конфиг AGH ---
 echo ""
-echo "==> [5/6] Конфиг AdGuard Home: $AGH_CONFIG"
+echo "==> [4/5] Конфиг AdGuard Home: $AGH_CONFIG"
 
 # Если конфига нет — разворачиваем из шаблона или создаём минимальный
 if [ ! -f "$AGH_CONFIG" ]; then
@@ -172,7 +170,7 @@ sleep 2
 
 # --- 6. LuCI: устанавливаем меню и iframe-страницу ---
 echo ""
-echo "==> [6/6] LuCI-страница AdGuard Home (iframe → порт 3000)"
+echo "==> [5/5] LuCI-страница AdGuard Home (iframe → порт 3000)"
 
 MENU_SRC="$SCRIPT_DIR/luci/menu.d/luci-app-adguardhome.json"
 MENU_DST="/usr/share/luci/menu.d/luci-app-adguardhome.json"
