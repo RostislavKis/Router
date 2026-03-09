@@ -85,6 +85,33 @@ else
 fi
 echo ""
 
+# ── Запрос пароля ─────────────────────────────────────────────────────────
+echo "==> Настройка пароля"
+echo "    Пароль будет установлен для: SSH / LuCI (root) и AdGuard Home"
+echo ""
+
+ROUTER_PASS=""
+while [ -z "$ROUTER_PASS" ]; do
+    printf "    Введите пароль: "
+    stty -echo 2>/dev/null || true
+    read -r ROUTER_PASS
+    stty echo 2>/dev/null || true
+    echo ""
+    [ -z "$ROUTER_PASS" ] && echo "    Пароль не может быть пустым." && continue
+    printf "    Подтвердите пароль: "
+    stty -echo 2>/dev/null || true
+    read -r _PASS2
+    stty echo 2>/dev/null || true
+    echo ""
+    if [ "$ROUTER_PASS" != "$_PASS2" ]; then
+        echo "    Пароли не совпадают. Попробуйте ещё раз."
+        ROUTER_PASS=""
+    fi
+done
+export ROUTER_PASS
+echo "    Пароль принят."
+echo ""
+
 # ── Создаём рабочую директорию ────────────────────────────────────────────
 rm -rf "$DEST"
 mkdir -p "$DEST/luci/menu.d" "$DEST/luci/acl.d" "$DEST/luci/view/cf-optimizer" "$DEST/luci/view/adguardhome"

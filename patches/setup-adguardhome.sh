@@ -29,35 +29,55 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGH_CONFIG="/etc/adguardhome/config.yaml"
+AGH_USER="root"
+_PLACEHOLDER_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 
 # ============================================================
-# ПАРОЛЬ AdGuard Home (только AGH, пароль роутера/LuCI не меняется)
-#
-# Оставьте плейсхолдер — тогда пароль нужно установить вручную
-# через веб-интерфейс AGH: http://192.168.1.1:3000
-#
-# Чтобы задать пароль через скрипт:
-#   1. Пересчитайте bcrypt-хэш своего пароля:
-#      python3 -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASS', bcrypt.gensalt(10)).decode())"
-#   2. Вставьте хэш ниже вместо плейсхолдера
+# Пароль берётся из переменной ROUTER_PASS (передаётся через install.sh).
+# При самостоятельном запуске — запрашивается интерактивно.
 # ============================================================
-AGH_USER="root"
-AGH_PASSWORD_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
-_PLACEHOLDER_HASH='$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
-# ============================================================
+if [ -z "$ROUTER_PASS" ]; then
+    printf "Введите пароль (SSH/LuCI + AdGuard Home): "
+    stty -echo 2>/dev/null || true
+    read -r ROUTER_PASS
+    stty echo 2>/dev/null || true
+    echo ""
+fi
+[ -z "$ROUTER_PASS" ] && echo "ОШИБКА: пароль не задан" && exit 1
 
 echo "==> AdGuard Home: настройка"
 echo ""
 
-# --- 1. dnsmasq: отключаем DNS, оставляем только DHCP ---
+# --- 1. Установка паролей root (SSH/LuCI) и AdGuard Home ---
+echo "==> [1/7] Установка пароля root (SSH/LuCI)"
+printf '%s\n%s\n' "$ROUTER_PASS" "$ROUTER_PASS" | passwd root 2>/dev/null \
+    && echo "    пароль root — установлен" \
+    || echo "    WARNING: не удалось установить пароль root"
+
 echo ""
-echo "==> [1/5] dnsmasq: порт 53 → 0 (AGH занимает DNS)"
+echo "==> [2/7] Генерация пароля AdGuard Home"
+AGH_PASSWORD_HASH=""
+if python3 -c "import bcrypt" 2>/dev/null; then
+    AGH_PASSWORD_HASH=$(python3 -c \
+        "import bcrypt,sys; h=bcrypt.hashpw(sys.argv[1].encode(),bcrypt.gensalt(10)); print(h.decode())" \
+        "$ROUTER_PASS" 2>/dev/null) || AGH_PASSWORD_HASH=""
+fi
+if [ -n "$AGH_PASSWORD_HASH" ]; then
+    echo "    bcrypt-хэш сгенерирован"
+else
+    AGH_PASSWORD_HASH="$_PLACEHOLDER_HASH"
+    echo "    python3+bcrypt недоступен — задайте пароль AGH вручную через порт 3000"
+fi
+
+# --- 3. dnsmasq: отключаем DNS, оставляем только DHCP ---
+echo ""
+echo "==> [3/7] dnsmasq: порт 53 → 0 (AGH занимает DNS)"
 uci set dhcp.@dnsmasq[0].port='0'
 echo "    dnsmasq port=0 (DNS отключён, только DHCP)"
 
 # --- 2. DHCP: клиенты должны использовать роутер как DNS ---
 echo ""
-echo "==> [2/5] DHCP option 6 → 192.168.1.1 (AGH как DNS для клиентов)"
+echo "==> [4/7] DHCP option 6 → 192.168.1.1 (AGH как DNS для клиентов)"
 # Без этого dnsmasq с port=0 отдаёт клиентам DNS провайдера вместо AGH
 uci -q delete dhcp.lan.dhcp_option 2>/dev/null || true
 uci add_list dhcp.lan.dhcp_option='6,192.168.1.1'
@@ -67,14 +87,14 @@ echo "    dhcp_option 6,192.168.1.1 → клиенты получат AGH как
 
 # --- 3. UCI: указываем путь к конфигу AGH ---
 echo ""
-echo "==> [3/5] UCI adguardhome → $AGH_CONFIG"
+echo "==> [5/7] UCI adguardhome → $AGH_CONFIG"
 uci set adguardhome.config.config_file="$AGH_CONFIG"
 uci commit adguardhome
 echo "    adguardhome.config.config_file=$AGH_CONFIG"
 
 # --- 4. Конфиг AGH ---
 echo ""
-echo "==> [4/5] Конфиг AdGuard Home: $AGH_CONFIG"
+echo "==> [6/7] Конфиг AdGuard Home: $AGH_CONFIG"
 
 # Если конфига нет — разворачиваем из шаблона или создаём минимальный
 if [ ! -f "$AGH_CONFIG" ]; then
@@ -170,7 +190,7 @@ sleep 2
 
 # --- 6. LuCI: устанавливаем меню и iframe-страницу ---
 echo ""
-echo "==> [5/5] LuCI-страница AdGuard Home (iframe → порт 3000)"
+echo "==> [7/7] LuCI-страница AdGuard Home (iframe → порт 3000)"
 
 MENU_SRC="$SCRIPT_DIR/luci/menu.d/luci-app-adguardhome.json"
 MENU_DST="/usr/share/luci/menu.d/luci-app-adguardhome.json"
