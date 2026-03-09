@@ -40,7 +40,6 @@ latency-start.sh
 mihomo-watchdog.sh
 log-rotate.sh
 geo-update.sh
-cf-ip-update.sh
 sni-scan.sh
 xray-control.sh
 xray-install.sh
