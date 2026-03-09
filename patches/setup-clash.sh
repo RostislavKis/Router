@@ -131,6 +131,14 @@ if [ -z "$MIHOMO_URL" ]; then
 fi
 
 echo "    URL: $(basename "$MIHOMO_URL")"
+
+# Остановить сервис если запущен — иначе "Text file busy" при перезаписи бинаря
+if /etc/init.d/clash status 2>/dev/null | grep -q running; then
+    echo "    Останавливаем SSClash для обновления бинаря..."
+    /etc/init.d/clash stop 2>/dev/null || true
+    sleep 1
+fi
+
 uclient-fetch -O /tmp/mihomo.gz "$MIHOMO_URL"
 gunzip -c /tmp/mihomo.gz > /opt/clash/bin/clash
 chmod 755 /opt/clash/bin/clash
