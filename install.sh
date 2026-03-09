@@ -40,6 +40,7 @@ latency-start.sh
 mihomo-watchdog.sh
 log-rotate.sh
 geo-update.sh
+cf-ip-update.sh
 sni-scan.sh
 xray-control.sh
 xray-install.sh
@@ -89,9 +90,11 @@ rm -rf "$DEST"
 mkdir -p "$DEST/luci/menu.d" "$DEST/luci/acl.d" "$DEST/luci/view/cf-optimizer" "$DEST/luci/view/adguardhome"
 
 # Вспомогательная функция: загрузка или копирование файла
+# $3=optional — предупреждение вместо ошибки если файл недоступен
 fetch_file() {
     local src_rel="$1"   # относительный путь (patches/...)
     local dest="$2"
+    local optional="${3:-}"
 
     mkdir -p "$(dirname "$dest")"
 
@@ -106,6 +109,9 @@ fetch_file() {
         printf '    [curl]  %s\n' "$src_rel"
     elif uclient-fetch -O "$dest" "$url" 2>/dev/null; then
         printf '    [fetch] %s\n' "$src_rel"
+    elif [ "$optional" = "optional" ]; then
+        printf '    [skip]  %s (не в репозитории — пропускаем)\n' "$src_rel"
+        return 0
     else
         echo "ERROR: не удалось получить $src_rel"
         echo "       Проверь интернет или скопируй файлы вручную (scp -r . root@192.168.1.1:/tmp/router/)."
@@ -118,7 +124,10 @@ fetch_file() {
 echo "==> Подготовка файлов..."
 for f in $PATCH_FILES; do
     [ -z "$f" ] && continue
-    fetch_file "$f" "$DEST/$f"
+    case "$f" in
+        cf-ip-update.sh) fetch_file "$f" "$DEST/$f" optional ;;
+        *)               fetch_file "$f" "$DEST/$f" ;;
+    esac
 done
 
 # ── Загружаем шаблон конфига AGH ──────────────────────────────────────────
