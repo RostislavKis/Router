@@ -74,6 +74,10 @@ printf '%s\n%s\n' "$ROUTER_PASS" "$ROUTER_PASS" | passwd root 2>/dev/null \
 echo ""
 echo "==> [2/7] Генерация пароля AdGuard Home"
 AGH_PASSWORD_HASH=""
+if ! python3 -c "import bcrypt" 2>/dev/null; then
+    echo "    python3-bcrypt не установлен — устанавливаем..."
+    apk add python3-bcrypt 2>/dev/null || apk add py3-bcrypt 2>/dev/null || true
+fi
 if python3 -c "import bcrypt" 2>/dev/null; then
     AGH_PASSWORD_HASH=$(python3 -c \
         "import bcrypt,sys; h=bcrypt.hashpw(sys.argv[1].encode(),bcrypt.gensalt(10)); print(h.decode())" \
@@ -82,8 +86,10 @@ fi
 if [ -n "$AGH_PASSWORD_HASH" ]; then
     echo "    bcrypt-хэш сгенерирован"
 else
-    AGH_PASSWORD_HASH="$_PLACEHOLDER_HASH"
-    echo "    python3+bcrypt недоступен — задайте пароль AGH вручную через порт 3000"
+    echo "ОШИБКА: не удалось сгенерировать bcrypt-хэш для AdGuard Home."
+    echo "       Установите вручную: apk add python3-bcrypt"
+    echo "       Затем повторите: $0"
+    exit 1
 fi
 
 # --- 3. dnsmasq: отключаем DNS, оставляем только DHCP ---
