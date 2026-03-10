@@ -35,7 +35,7 @@ Telegram использует хардкодные IP-адреса (`149.154.160
 
 ### DNS
 
-```
+```text
 Устройство (UDP/TCP :53)
     │
     ▼
@@ -53,7 +53,7 @@ Mihomo DNS  :1053  (fake-ip, 198.18.0.0/16)
 
 ### Трафик
 
-```
+```text
 Telegram (149.154.x.x / 91.108.x.x)
     → inet telegram_tproxy  priority -200  →  mark=0x1
     → inet clash proxy  TPROXY :7894
@@ -68,7 +68,7 @@ Telegram (149.154.x.x / 91.108.x.x)
 
 ### Порядок старта сервисов
 
-```
+```text
 AGH (START=19) → dnsmasq (20) → SSClash/Mihomo (21) → cf-optimizer (96)
 ```
 
@@ -78,18 +78,9 @@ AGH (START=19) → dnsmasq (20) → SSClash/Mihomo (21) → cf-optimizer (96)
 
 ## Установка
 
-### Шаг 1. Клонировать репозиторий на ПК
+### Шаг 1. Подготовить config.yaml
 
-```sh
-git clone https://github.com/AUTHOR/REPO.git
-cd REPO
-```
-
-### Шаг 2. Настроить config.yaml для роутера
-
-Положить готовый `config.yaml` от провайдера в `patches/` (или сразу на роутер в `/opt/clash/config.yaml`).
-
-Обязательные параметры в конфиге:
+Взять готовый `config.yaml` от провайдера подписки. Обязательные параметры:
 
 ```yaml
 mixed-port: 7890
@@ -109,46 +100,50 @@ dns:
     - "+.githubusercontent.com"
 ```
 
+### Шаг 2. Запустить установку
+
+`install.sh` — единый скрипт установки. Последовательно запускает `setup-clash.sh` → `setup-adguardhome.sh` → `setup-cf-optimizer.sh`, спрашивает пароль для SSH/LuCI и AdGuard Home, умеет работать как с локальными файлами, так и загружать всё с GitHub.
+
+**Способ А — одна строка прямо на роутере** (нужен интернет):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/RostislavKis/Router/master/install.sh | sh
+```
+
+**Способ Б — с ПК через scp** (если интернет на роутере ещё не настроен):
+
+```sh
+# Сначала скопировать config.yaml в корень репозитория
+scp -r . root@192.168.1.1:/tmp/router/
+ssh root@192.168.1.1 "sh /tmp/router/install.sh"
+```
+
+После завершения открыть `http://192.168.1.1:3000` — AdGuard Home попросит задать upstream DNS: `127.0.0.1:1053`.
+
 ### Safe Install — автоматический откат при ошибках
 
-Если что-то пойдёт не так во время установки (конфликт nftables, неправильный конфиг, падение Mihomo или AdGuardHome), `safe-install.sh` автоматически откатит все изменения и вернёт роутер в рабочее состояние — без потери интернета.
+При обновлении только Proxy Optimizer на уже работающем роутере используй `safe-install.sh` вместо прямого вызова `setup-cf-optimizer.sh`. Если что-то сломается — роутер сам вернётся в исходное состояние.
+
+```sh
+scp -r patches/ root@192.168.1.1:/tmp/cf-optimizer-deploy/
+ssh root@192.168.1.1 "sh /tmp/cf-optimizer-deploy/safe-install.sh"
+```
 
 Что делает предохранитель:
 
-1. До установки снимает бэкап `/etc/config/{dhcp,firewall,network,system}` и crontab
-2. Фиксирует текущее состояние: Mihomo работает? AGH работает? Пинг до 8.8.8.8? DNS?
+1. Снимает бэкап `/etc/config/{dhcp,firewall,network,system}` и crontab
+2. Фиксирует baseline: Mihomo работает? AGH работает? Ping 8.8.8.8? DNS?
 3. Запускает `setup-cf-optimizer.sh`
-4. Ждёт 15 секунд и повторяет те же 4 проверки
-5. Если хоть одна из ранее работавших проверок провалилась: удаляет кастомные nftables-таблицы (`cf_dpi_bypass`, `telegram_tproxy`, `dns_redirect`), восстанавливает все UCI-конфиги из бэкапа, перезапускает `network`, `dnsmasq`, `firewall`
-6. Если всё ОК: удаляет временные бэкапы
-
-### Шаг 3. Скопировать файлы на роутер и запустить установку
-
-```sh
-# С ПК — загрузить папку patches/ на роутер
-scp -r patches/ root@192.168.1.1:/tmp/cf-optimizer-deploy/
-
-# Зайти по SSH и запустить установку (с защитой от окирпичивания)
-ssh root@192.168.1.1
-sh /tmp/cf-optimizer-deploy/safe-install.sh
-```
-
-### Шаг 4. Запустить
-
-```sh
-/etc/init.d/cf-optimizer start
-```
-
-### Шаг 5. AdGuard Home
-
-Открыть `http://192.168.1.1:3000`. В настройках DNS указать upstream: `127.0.0.1:1053`. Bootstrap DNS: `1.1.1.1`.
+4. Ждёт 15 секунд, повторяет те же 4 проверки
+5. При провале: удаляет кастомные nftables-таблицы, восстанавливает UCI из бэкапа, перезапускает `network`/`dnsmasq`/`firewall`
+6. При успехе: удаляет временные бэкапы
 
 ---
 
 ## Все скрипты — что и зачем
 
 | Скрипт | Запуск | Задача |
-|--------|--------|--------|
+| --- | --- | --- |
 | `latency-monitor.sh` | cron каждые 15 мин + 1-мин триггер | Тестирует прокси в GEMINI группе; валидирует геодоступность через `gl=` код Google; переключает с гистерезисом 20% |
 | `mihomo-watchdog.sh` | cron каждые 10 мин | Проверяет `/version` + `/proxies` API; 2 сбоя подряд → перезапуск Mihomo → перезапуск cf-optimizer |
 | `sni-scan.sh` | cron 02:30 *(откл.)* | Перебирает SNI-варианты через реальный SOCKS5-тоннель `:7891`; обновляет `sni:` у прокси с горячим релоадом |
@@ -164,7 +159,7 @@ sh /tmp/cf-optimizer-deploy/safe-install.sh
 
 Статусные файлы (читаются LuCI):
 
-```
+```text
 /var/run/latency-monitor.status    — текущий прокси, задержка, время последнего запуска
 /var/run/mihomo-watchdog.status    — статус watchdog, счётчик сбоев
 /var/run/xray-fragment.status      — статус Xray, PID
@@ -177,6 +172,7 @@ sh /tmp/cf-optimizer-deploy/safe-install.sh
 ## LuCI: Сервисы → Proxy Optimizer
 
 **Вкладка Overview** — дашборд с авто-обновлением раз в 5 секунд:
+
 - Текущий прокси GEMINI-группы + задержка (зелёный / красный)
 - Статус Mihomo Watchdog: healthy / warning / failed + счётчик сбоев
 - Статус Xray Fragment: running / stopped / not_installed + PID
@@ -184,6 +180,7 @@ sh /tmp/cf-optimizer-deploy/safe-install.sh
 - Кнопки управления Xray и dialer-proxy
 
 **Вкладка Settings** — UCI-форма `/etc/config/cf_optimizer`:
+
 - Включение/выключение каждого компонента независимо
 - Имена прокси-групп, порог переключения (%)
 - MSS value, Xray fragment length/interval
@@ -197,7 +194,7 @@ sh /tmp/cf-optimizer-deploy/safe-install.sh
 
 Скрипты и cron хранятся в rootfs и сотрутся. Перед прошивкой убедиться, что в `/etc/sysupgrade.conf` есть:
 
-```
+```text
 /etc/config/cf_optimizer
 /etc/cf-optimizer/
 /etc/init.d/cf-optimizer
@@ -212,22 +209,27 @@ sh /tmp/cf-optimizer-deploy/safe-install.sh
 
 ## Частые ситуации
 
-**Кнопка «Запустить мониторинг» нажалась, но ничего не происходит минуту**
+### Кнопка «Запустить мониторинг» нажалась, но ничего не происходит минуту
+
 Это нормально. Кнопка только создаёт триггер-файл. Cron подхватывает его в течение минуты и запускает `latency-monitor.sh` уже вне контекста rpcd.
 
-**Gemini продолжает показывать геоблок**
+### Gemini продолжает показывать геоблок
+
 1. Проверить активный прокси: `curl -s http://127.0.0.1:9090/proxies` + имя GEMINI-группы
 2. Проверить нет ли IPv6 на устройстве — IPv6-трафик TPROXY не перехватывает, он идёт в обход прокси напрямую
 3. Проверить DNS: устройство должно получать DNS только с `192.168.1.1` (AGH)
 
-**Mihomo не стартует, NTP зависает при загрузке**
+### Mihomo не стартует, NTP зависает при загрузке
+
 ```sh
 uci get system.ntp.server
 # Должны быть: time.google.com time.cloudflare.com 0.pool.ntp.org 1.pool.ntp.org
 ```
+
 Если там `*.openwrt.pool.ntp.org` — запустить `setup-cf-optimizer.sh` заново.
 
-**Посмотреть логи в реальном времени**
+### Посмотреть логи в реальном времени
+
 ```sh
 logread -f | grep -E 'cf-optimizer|clash|adguard'
 tail -f /var/log/latency-monitor.log
