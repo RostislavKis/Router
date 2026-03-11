@@ -1,6 +1,7 @@
 # Личные конфиги с ключами и паролями
 config.yaml
 config-verge.yaml
+config-Mi.yaml
 
 # Прошивка (большой бинарный файл)
 *.bin

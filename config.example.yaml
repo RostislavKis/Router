@@ -1,23 +1,24 @@
-# config.example.yaml — шаблон конфига SSClash для GL-iNet Flint 2
+# config.example.yaml — шаблон конфига SSClash для GL-iNet Flint 2 (GL-MT6000)
 # Скопируй в config.yaml и заполни свои значения (отмечены YOUR_...)
 #
 # Чувствительные данные ЗАМЕНЕНЫ на плейсхолдеры:
-#   YOUR_VPN_SERVER        — домен/IP твоего VPN-сервера
-#   YOUR_UUID              — UUID VLESS
-#   YOUR_REALITY_PUBKEY    — Reality public key
-#   YOUR_REALITY_SHORTID   — Reality short-id
-#   YOUR_WS_PATH           — WebSocket path
-#   YOUR_WARP_PRIVKEY      — WireGuard private key (WARP/AmneziaWG)
-#   YOUR_WARP_PUBKEY       — WireGuard public key
-#   YOUR_AWG_HEX           — AmneziaWG hex-конфиг (i1/i2/j1)
-#   YOUR_NEXTDNS_ID        — ID профиля NextDNS (cffd45 и т.п.)
-#   YOUR_TROJAN_PASSWORD   — пароль Trojan-прокси
+#   YOUR_PROXY_PASSWORD   — пароль для SOCKS5/HTTP прокси (user:YOUR_PROXY_PASSWORD)
+#   YOUR_API_SECRET       — токен для REST API (Zashboard / скрипты)
+#   YOUR_NEXTDNS_ID       — ID профиля NextDNS (пример: cffd45)
+#   YOUR_WARP_PRIVKEY     — WireGuard private key (WARP/AmneziaWG)
+#   YOUR_AWG_HEX_1        — AmneziaWG i1 hex-blob для 1 варианта
+#   YOUR_AWG_HEX_2        — AmneziaWG i1 hex-blob для 2 варианта
+#   YOUR_AWG_HEX_3        — AmneziaWG i1/i2/j1 hex для 3 варианта
+#   YOUR_PROVIDER1_URL    — URL подписки первого провайдера прокси
+#   YOUR_PROVIDER2_URL    — URL подписки второго провайдера прокси
 
-mmdb-path: /opt/clash/country.mmdb
+# Обновление GeoIP
+mmdb-path: /opt/clash/geoip.db
 geodata-url:
-  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.dat"
-  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.dat"
+  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geoip.db"
+  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/geosite.db"
 
+# Основные настройки
 mixed-port: 7890
 socks-port: 7891
 redir-port: 7892
@@ -27,26 +28,30 @@ allow-lan: true
 bind-address: '*'
 mode: rule
 authentication:
-  - "user:YOUR_PROXY_PASSWORD"    # Отдельный пароль для SOCKS5/HTTP прокси (НЕ SSH!)
+  - "user:YOUR_PROXY_PASSWORD"
 log-level: info
 ipv6: false
 external-controller: 0.0.0.0:9090
-secret: "YOUR_API_SECRET"         # Обязательно! Токен для REST API (Zashboard, скрипты)
+secret: "YOUR_API_SECRET"
 external-ui: /opt/clash/ui/xd
 external-ui-url: "https://github.com/Zephyruso/zashboard/releases/latest/download/dist-cdn-fonts.zip"
 
+# Настройки для DPI обхода
 tcp-fast-open: true
 udp-fragment: false
 enable-process: false
 routing-mark: 2
 
+# Профиль
 profile:
   store-selected: true
   tracing: true
 
+# Keep-alive настройки
 keep-alive-idle: 15
 keep-alive-interval: 15
 
+# TUN (не используется, оставлено как есть)
 tun:
   enable: false
   stack: system
@@ -63,14 +68,12 @@ tun:
     - 192.168.0.0/16
     - 224.0.0.0/4
 
-# ============================================================
 # DNS — fake-ip на порту 1053 (AGH форвардит сюда с порта 53)
-# ============================================================
 dns:
   enable: true
   listen: '127.0.0.1:1053'
   enhanced-mode: fake-ip
-  fake-ip-range: '198.18.0.1/16'
+  fake-ip-range: 198.18.0.0/16
   fake-ip-filter-mode: blacklist
   prefer-h3: true
   respect-rules: false
@@ -141,15 +144,21 @@ dns:
     - '+.su'
     - '+.otpbank.ru'
     - '+.ozon.ru'
+    - '+.finance.ozon.ru'
     - '+.wildberries.ru'
     - '+.wb.ru'
     - '+.ya.ru'
     - '+.yandex.ru'
+    - '+.yabank.yandex.ru'
     - '+.t2.ru'
     - '+.tele2.ru'
     - '+.mts.ru'
+    - '+.lk.mts.ru'
+    - '+.mtsbank.ru'
     - '+.openwrt.org'
+    - '+.downloads.openwrt.org'
     - '+.gl-inet.com'
+    - '+.fw.gl-inet.com'
     - '+.github.com'
     - '+.github.io'
     - '+.githubusercontent.com'
@@ -165,42 +174,96 @@ dns:
     - '*.msftconnecttest.com'
     - 'msftncsi.com'
     - '*.msftncsi.com'
+    - 'dns.msftncsi.com'
+    - 'www.msftconnecttest.com'
     - 'connectivitycheck.gstatic.com'
     - 'clients3.google.com'
     - 'clients4.google.com'
     - 'captive.apple.com'
+    - 'netcts.cdn-apple.com'
     - 'apple.com'
     - '*.apple.com'
     - '*.gstatic.com'
     - 'miwifi.com'
     - '*.miwifi.com'
+    - 'router.asus.com'
+    - '*.router.asus.com'
+    - 'tplinkwifi.net'
+    - '*.tplinkwifi.net'
+    - 'linksyssmartwifi.com'
+    - '*.linksyssmartwifi.com'
     - 'my.router'
+    - 'my.keenetic.net'
+    - 'keenetic.net'
+    - '*.keenetic.net'
     - '+.flowlayer.app'
     - 'pool.ntp.org'
     - '*.pool.ntp.org'
     - 'time.google.com'
     - 'time.cloudflare.com'
+    - '+.arza.top'
+    - '+.accessbyme.com'
+    - '+.jackett'
+    - '+.flaresolverr'
+    - '+.tracker'
+    - 'rutracker.org'
+    - '*.xxee.ru'
 
+# Sniffer для определения сервисов
 sniffer:
   enable: true
   sniff-tls-sni: true
   force-dns-mapping: false
   parse-pure-ip: false
 
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+      sniff-request: true
+    TLS:
+      ports: [443, 8443]
+
+  skip-domain:
+    - "+.github.com"
+    - "+.githubusercontent.com"
+    - "+.githubcopilot.com"
+    - "+.visualstudio.com"
+    - "+.vsassets.io"
+    - "+.microsoftonline.com"
+    - "+.live.com"
+    - "+.office.com"
+    - "+.azure.com"
+    - "+.windows.net"
+    - "+.msftconnecttest.com"
+    - "+.msftncsi.com"
+    - "+.lan"
+    - "+.local"
+    - "+.apple.com"
+    - "*.miwifi.com"
+    - "yandex.ru"
+    - "*.yandex.ru"
+    - "rutube.ru"
+    - "*.rutube.ru"
+
+# Hosts файл
 hosts:
+  ntc.party: 130.255.77.28
+  4pda.to: [185.87.51.182, 104.20.39.144]
+  www.4pda.to: [185.87.51.182, 104.20.39.144]
+  appbk.4pda.to: 172.66.159.63
+  app.4pda.to: 108.181.60.131
   jackett: 127.0.0.1
   flaresolverr: 127.0.0.1
 
-# ============================================================
 # WARP / AmneziaWG — общие параметры
-# ============================================================
 warp-common: &warp-common
   type: wireguard
   ip: 172.16.0.2
   private-key: YOUR_WARP_PRIVKEY
-  public-key: YOUR_WARP_PUBKEY
+  public-key: bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=
   allowed-ips: ['0.0.0.0/0']
-  reserved: [0, 0, 0]     # твои reserved bytes
+  reserved: [240, 220, 224]
   udp: true
   mtu: 1280
   remote-dns-resolve: true
@@ -209,136 +272,688 @@ warp-common: &warp-common
   port: 4500
 
 proxies:
-  # WARP
-  - name: "WARP-IPv4"
+  - name: "🔰 WARP-IPv4"
     <<: *warp-common
+    icon: https://www.vectorlogo.zone/logos/cloudflare/cloudflare-icon.svg
 
-  # AmneziaWG (пример одного варианта — добавь свои)
-  - name: "AWG (Вариант 1)"
+  - name: "AWG 1.5 (1 Вариант)"
     <<: *warp-common
     amnezia-wg-option:
-      jc: 120
-      jmin: 23
-      jmax: 911
-      s1: 0
-      s2: 0
-      h1: 1
-      h2: 2
-      h4: 3
-      h3: 4
-      i1: <b YOUR_AWG_HEX>
+     jc: 120
+     jmin: 23
+     jmax: 911
+     s1: 0
+     s2: 0
+     h1: 1
+     h2: 2
+     h4: 3
+     h3: 4
+     i1: <b YOUR_AWG_HEX_1>
 
-  # VLESS TCP (пример — дублируй для каждого сервера)
-  - name: "Finland · VLESS, TCP"
-    type: vless
-    server: YOUR_VPN_SERVER
-    port: 443
-    uuid: "YOUR_UUID"
-    udp: true
-    tls: true
-    servername: YOUR_VPN_SERVER
-    flow: xtls-rprx-vision
-    skip-cert-verify: false
-    client-fingerprint: random
-    network: tcp
-    reality-opts:
-      public-key: YOUR_REALITY_PUBKEY
-      short-id: YOUR_REALITY_SHORTID
+  - name: "AWG 1.5 (2 Вариант)"
+    <<: *warp-common
+    amnezia-wg-option:
+     jc: 120
+     jmin: 23
+     jmax: 911
+     s1: 0
+     s2: 0
+     h1: 1
+     h2: 2
+     h4: 3
+     h3: 4
+     i1: <b YOUR_AWG_HEX_2>
 
-  # VLESS WS
-  - name: "Finland · VLESS, WS"
-    type: vless
-    server: YOUR_VPN_SERVER
-    port: 443
-    uuid: "YOUR_UUID"
-    udp: true
-    tls: true
-    skip-cert-verify: false
-    network: ws
-    ws-opts:
-      path: YOUR_WS_PATH
-      headers:
-        Host: YOUR_VPN_SERVER
+  - name: "AWG 1.5 (3 Вариант)"
+    <<: *warp-common
+    amnezia-wg-option:
+     jc: 120
+     jmin: 23
+     jmax: 911
+     s1: 0
+     s2: 0
+     h1: 1
+     h2: 2
+     h4: 3
+     h3: 4
+     i1: <b YOUR_AWG_HEX_3_I1>
+     i2: <b YOUR_AWG_HEX_3_I2>
+     j1: <b YOUR_AWG_HEX_3_J1>
+     itime: 120
 
-  # Trojan gRPC (пример)
-  - name: "Finland · Trojan, gRPC"
-    type: trojan
-    server: YOUR_VPN_SERVER
-    port: 443
-    password: YOUR_TROJAN_PASSWORD
-    udp: true
-    tls: true
-    skip-cert-verify: false
-    network: grpc
-    grpc-opts:
-      grpc-service-name: YOUR_GRPC_SERVICE
+proxy-providers:
+  Provider1:
+    type: http
+    url: "YOUR_PROVIDER1_URL"
+    interval: 3600
+    health-check:
+      enable: true
+      url: "https://cp.cloudflare.com/generate_204"
+      interval: 300
+    path: ./proxy_providers/provider1.yaml
 
-# ============================================================
+  Provider2:
+    type: http
+    url: "YOUR_PROVIDER2_URL"
+    interval: 3600
+    proxy: "Provider1 Auto"
+    health-check:
+      enable: true
+      url: "https://cp.cloudflare.com/generate_204"
+      interval: 300
+    path: ./proxy_providers/provider2.yaml
+
+rule-providers:
+  ru_critical:
+    type: http
+    behavior: domain
+    format: text
+    path: ./ruleset/ru_critical.txt
+    url: "https://raw.githubusercontent.com/De1ta01/adguard-russian-gov-whitelist/main/whitelist.txt"
+    interval: 86400
+  xiaomi:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    path: /opt/clash/ruleset/xiaomi.yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/XiaoMi/XiaoMi.yaml"
+  steam:
+    type: http
+    behavior: classical
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Steam/Steam.yaml"
+    path: /opt/clash/ruleset/steam.yaml
+    interval: 86400
+  ru-blocked:
+    behavior: domain
+    type: http
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/shvchk/unblock-net@main/lists/clash/ru-blocked'
+    interval: 86400
+    path: /opt/clash/ruleset/ru-blocked.yaml
+  twitter:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Twitter/Twitter.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/twitter.yaml
+  instagram:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Instagram/Instagram.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/instagram.yaml
+  facebook:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Facebook/Facebook.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/facebook.yaml
+  youtube:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/YouTube/YouTube.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/youtube.yaml
+  discord-domain:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/fildunsky/clash_discord/refs/heads/main/discord-domain.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/discord-domain.yaml
+  discord-ip:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/fildunsky/clash_discord/refs/heads/main/discord-ip.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/discord-ip.yaml
+  whatsapp:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Whatsapp/Whatsapp.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/whatsapp.yaml
+  notion:
+    behavior: classical
+    type: http
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Notion/Notion.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/notion.yaml
+  anime-ip:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/anime.txt"
+    path: /opt/clash/ruleset/anime.txt
+    interval: 86400
+  art:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/art.txt"
+    path: /opt/clash/ruleset/art.txt
+    interval: 86400
+  casino:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/casino.txt"
+    path: /opt/clash/ruleset/casino.txt
+    interval: 86400
+  discord-txt:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/discord.txt"
+    path: /opt/clash/ruleset/discord-txt.txt
+    interval: 86400
+  education:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/education.txt"
+    path: /opt/clash/ruleset/education.txt
+    interval: 86400
+  games:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/games.txt"
+    path: /opt/clash/ruleset/games.txt
+    interval: 86400
+  jetbrains:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/jetbrains.txt"
+    path: /opt/clash/ruleset/jetbrains.txt
+    interval: 86400
+  messengers:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/messengers.txt"
+    path: /opt/clash/ruleset/messengers.txt
+    interval: 86400
+  music:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/music.txt"
+    path: /opt/clash/ruleset/music.txt
+    interval: 86400
+  news:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/news.txt"
+    path: /opt/clash/ruleset/news.txt
+    interval: 86400
+  porn:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/porn.txt"
+    path: /opt/clash/ruleset/porn.txt
+    interval: 86400
+  shop:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/shop.txt"
+    path: /opt/clash/ruleset/shop.txt
+    interval: 86400
+  social:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/social.txt"
+    path: /opt/clash/ruleset/social.txt
+    interval: 86400
+  torrent:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/torrent.txt"
+    path: /opt/clash/ruleset/torrent.txt
+    interval: 86400
+  video:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/video.txt"
+    path: /opt/clash/ruleset/video.txt
+    interval: 86400
+  youtube-ip:
+    type: http
+    behavior: classical
+    format: text
+    url: "https://raw.githubusercontent.com/RostislavKis/filter/main/youtube.txt"
+    path: /opt/clash/ruleset/youtube-ip.txt
+    interval: 86400
+  openai:
+    behavior: classical
+    type: http
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/openai.yaml
+  microsoft:
+    behavior: classical
+    type: http
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/microsoft.yaml
+  oracle:
+    behavior: classical
+    type: http
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Oracle/Oracle.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/oracle.yaml
+  telegram:
+    behavior: classical
+    type: http
+    format: yaml
+    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Telegram/Telegram.yaml"
+    interval: 86400
+    path: /opt/clash/ruleset/telegram.yaml
+  anime-trackers:
+    type: http
+    behavior: domain
+    format: text
+    url: "https://raw.githubusercontent.com/Pioooooo/clash-rules-bt/main/anime_trackers.txt"
+    path: /opt/clash/ruleset/anime-trackers.txt
+    interval: 86400
+
 # Прокси-группы
-# ============================================================
 proxy-groups:
 
-  # Основная группа — всё через неё
-  - name: "PROXY"
+  # Gemini AI / NotebookLM — автовыбор по Google-доступности
+  - name: "🤖 GEMINI"
     type: select
-    proxies:
-      - "BEST AUTO"
-      - "Finland · VLESS, TCP"
-      - "WARP-IPv4"
-      - DIRECT
+    use:
+      - Provider1
+    filter: "^(?!.*(Russia|Россия|Kazakhstan|Казахстан|Armenia|Армения|Torrent|torrent|Истекает|Купить|WARP|AWG)).*$"
 
-  # Авто-выбор лучшего
-  - name: "BEST AUTO"
+  # Provider1 — автовыбор лучшего прокси (без России, Казахстана, WARP/AWG)
+  - name: "Provider1 Auto"
     type: url-test
-    proxies:
-      - "Finland · VLESS, TCP"
-      - "Finland · VLESS, WS"
+    use:
+      - Provider1
+    filter: "^(?!.*(Russia|Россия|Kazakhstan|Казахстан|Armenia|Армения|Torrent|torrent|Истекает|Купить|WARP|AWG)).*$"
     url: "https://cp.cloudflare.com/generate_204"
     interval: 120
     tolerance: 50
 
-  # Gemini / Google AI — только ручной выбор
-  - name: "GEMINI"
+  # Provider2 — автовыбор лучшего прокси
+  - name: "Provider2 Auto"
+    type: url-test
+    use:
+      - Provider2
+    filter: "^(?!.*(Armenia|Армения|Истекает|Купить|Torrent|torrent)).*$"
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 120
+    tolerance: 50
+
+  # Основной прокси — выбор источника или конкретного сервера
+  - name: "🎯 MAIN-PROXY"
     type: select
     proxies:
-      - "Finland · VLESS, TCP"
-      - "Finland · VLESS, WS"
-      - DIRECT
+      - "Provider1 Auto"
+      - "Provider2 Auto"
+    use:
+      - Provider1
+      - Provider2
 
-  # Стриминг
-  - name: "STREAMING"
+  # PROXY — запасная группа для совместимости с правилами
+  - name: "PROXY"
+    type: select
+    use:
+      - Provider2
+    filter: "^(?!.*(Armenia|Армения|Истекает|Купить|Torrent|torrent)).*$"
+
+  # Telegram — AWG WireGuard
+  - name: "✈️ TELEGRAM"
+    type: url-test
+    proxies:
+      - "AWG 1.5 (1 Вариант)"
+      - "AWG 1.5 (2 Вариант)"
+      - "AWG 1.5 (3 Вариант)"
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 120
+
+  # Discord — AWG WireGuard
+  - name: "🎙️ DISCORD"
+    type: url-test
+    proxies:
+      - "AWG 1.5 (1 Вариант)"
+      - "AWG 1.5 (2 Вариант)"
+      - "AWG 1.5 (3 Вариант)"
+    url: "https://cp.cloudflare.com/generate_204"
+    interval: 120
+
+  # AWG Group — ручной выбор WireGuard
+  - name: "🔰 AWG Group"
     type: select
     proxies:
-      - "PROXY"
-      - DIRECT
+      - "Provider1 Auto"
+      - "AWG 1.5 (1 Вариант)"
+      - "AWG 1.5 (2 Вариант)"
+      - "AWG 1.5 (3 Вариант)"
 
-  # Реклама
-  - name: "AD BLOCK"
-    type: select
-    proxies:
-      - REJECT
-      - DIRECT
-
-# ============================================================
-# Правила маршрутизации
-# ============================================================
 rules:
-  # Gemini / Google AI
-  - DOMAIN,gemini.google.com,GEMINI
-  - DOMAIN,notebooklm.google.com,GEMINI
-  - DOMAIN,aistudio.google.com,GEMINI
-  - DOMAIN,generativelanguage.googleapis.com,GEMINI
+  # ========== GEMINI / GOOGLE / YOUTUBE ==========
+  - DOMAIN,gemini.google.com,🤖 GEMINI
+  - DOMAIN,aistudio.google.com,🤖 GEMINI
+  - DOMAIN,ai.google.dev,🤖 GEMINI
+  - DOMAIN,generativelanguage.googleapis.com,🤖 GEMINI
+  - DOMAIN,makersuite.google.com,🤖 GEMINI
+  - DOMAIN,notebooklm.google.com,🤖 GEMINI
+  - DOMAIN,notebooklm.google,🤖 GEMINI
+  - DOMAIN,deepmind.google,🤖 GEMINI
+  - DOMAIN,proactivebackend-pa.googleapis.com,🤖 GEMINI
+  - DOMAIN,model-viewer.googleapis.com,🤖 GEMINI
+  - DOMAIN,content-autofill.googleapis.com,🤖 GEMINI
+  - DOMAIN,cloudaicompanion.googleapis.com,🤖 GEMINI
+  - DOMAIN,cloudaicompanion-pa.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,proactivebackend-pa.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,makersuite.google.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,deepmind.google,🤖 GEMINI
+  - DOMAIN-SUFFIX,notebooklm.google.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,notebooklm.google,🤖 GEMINI
+  - DOMAIN-SUFFIX,aiplatform.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,automl.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,ml.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,vision.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,language.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,translate.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,speech.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,texttospeech.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,cloudfunctions.googleapis.com,🤖 GEMINI
+  # YouTube (явные domain-правила до IP-правил)
+  - DOMAIN-SUFFIX,youtube.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,youtu.be,🤖 GEMINI
+  - DOMAIN-SUFFIX,youtube-nocookie.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,googlevideo.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,ytimg.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,gvt1.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,gvt2.com,🤖 GEMINI
+  - DOMAIN-KEYWORD,youtu,🤖 GEMINI
+  - DOMAIN,accounts.google.com,🤖 GEMINI
+  - DOMAIN,accounts.youtube.com,🤖 GEMINI
+  - DOMAIN,oauth2.googleapis.com,🤖 GEMINI
+  - DOMAIN,accounts.gstatic.com,🤖 GEMINI
+  - DOMAIN,login.corp.google.com,🤖 GEMINI
+  - DOMAIN,apis.google.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,accounts.google.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,oauth2.googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,accounts.gstatic.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,apis.google.com,🤖 GEMINI
+  - DOMAIN,ssl.gstatic.com,🤖 GEMINI
+  - DOMAIN,www.gstatic.com,🤖 GEMINI
+  - DOMAIN,lh3.googleusercontent.com,🤖 GEMINI
+  - DOMAIN,fonts.googleapis.com,🤖 GEMINI
+  - DOMAIN,fonts.gstatic.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,gstatic.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,googleusercontent.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,ggpht.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,googleapis.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,google.com,🤖 GEMINI
+  - DOMAIN-SUFFIX,google.ru,🤖 GEMINI
+  - DOMAIN-KEYWORD,google,🤖 GEMINI
+  - GEOIP,GOOGLE,🤖 GEMINI
+  - IP-CIDR,8.8.8.0/24,🤖 GEMINI,no-resolve
+  - IP-CIDR,8.8.4.0/24,🤖 GEMINI,no-resolve
+  - IP-CIDR,173.194.0.0/16,🤖 GEMINI,no-resolve
+  - IP-CIDR,74.125.0.0/16,🤖 GEMINI,no-resolve
+  - IP-CIDR,172.217.0.0/16,🤖 GEMINI,no-resolve
+  - IP-CIDR,216.58.0.0/16,🤖 GEMINI,no-resolve
+  - IP-CIDR,64.233.160.0/19,🤖 GEMINI,no-resolve
+  - IP-CIDR,66.102.0.0/20,🤖 GEMINI,no-resolve
+  - IP-CIDR,66.249.64.0/19,🤖 GEMINI,no-resolve
+  - IP-CIDR,72.14.192.0/18,🤖 GEMINI,no-resolve
+  - IP-CIDR,108.177.0.0/17,🤖 GEMINI,no-resolve
+  - IP-CIDR,142.250.0.0/15,🤖 GEMINI,no-resolve
+  - IP-CIDR,172.253.0.0/16,🤖 GEMINI,no-resolve
+  - IP-CIDR,207.126.144.0/20,🤖 GEMINI,no-resolve
+  - IP-CIDR,209.85.128.0/17,🤖 GEMINI,no-resolve
+  - IP-CIDR,216.239.32.0/19,🤖 GEMINI,no-resolve
 
-  # Локальная сеть — всегда напрямую
+  # ===== LAMPA / CUB / ТОРРЕНТЫ (DIRECT) =====
+  - DOMAIN-SUFFIX,cub.red,DIRECT
+  - DOMAIN-SUFFIX,cub.rip,DIRECT
+  - DOMAIN-SUFFIX,cub.watch,DIRECT
+  - DOMAIN-SUFFIX,tmdb.cub.rip,DIRECT
+  - DOMAIN-SUFFIX,image.tmdb.org,DIRECT
+  - DOMAIN-SUFFIX,api.themoviedb.org,DIRECT
+  - DOMAIN-SUFFIX,themoviedb.org,DIRECT
+  - DOMAIN-SUFFIX,tmdb-image-prod.b-cdn.net,DIRECT
+  - RULE-SET,anime-trackers,DIRECT
+
+  # Исключения для торрентов, Jackett и FlareSolverr
+  - DOMAIN-SUFFIX,jackett,DIRECT
+  - DOMAIN-SUFFIX,flaresolverr,DIRECT
+  - DOMAIN-KEYWORD,tracker,DIRECT
+  - DOMAIN-SUFFIX,yumata.github.io,DIRECT
+  - DOMAIN-SUFFIX,kurwa-bober.ninja,DIRECT
+  - DOMAIN-SUFFIX,bitru.org,DIRECT
+  - DOMAIN-SUFFIX,toloka.to,DIRECT
+  - DOMAIN-SUFFIX,nnmclub.to,DIRECT
+  - DOMAIN-SUFFIX,megapeer.vip,DIRECT
+  - DOMAIN-SUFFIX,rutor.info,DIRECT
+  - DOMAIN-SUFFIX,bt4.t-ru.org,DIRECT
+  - DOMAIN-SUFFIX,torrentleech.org,DIRECT
+
+  - PROCESS-NAME,lampa.exe,DIRECT,no-resolve
+  - PROCESS-NAME,lampac.exe,DIRECT,no-resolve
+
+  # Торренты (порты)
+  - AND,((NETWORK,TCP),(DST-PORT,50000-65535)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,4000-4999)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,6881-6999)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,51413)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,6881-6999)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,51413)),DIRECT
+
+  # ===== Discord =====
+  - AND,((NETWORK,UDP),(DST-PORT,3478-3497)),🎙️ DISCORD
+  - AND,((NETWORK,UDP),(DST-PORT,5349)),🎙️ DISCORD
+  - AND,((NETWORK,TCP),(DST-PORT,3478-3497)),🎙️ DISCORD
+  - AND,((NETWORK,TCP),(DST-PORT,5349)),🎙️ DISCORD
+  - DOMAIN-KEYWORD,stun,🎙️ DISCORD
+  - DOMAIN-KEYWORD,turn,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discord.com,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discord.gg,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discordapp.com,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discordapp.net,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discord.media,🎙️ DISCORD
+  - DOMAIN-SUFFIX,discordstatus.com,🎙️ DISCORD
+
+  # ===== FaceTime calls -> TELEGRAM =====
+  - DOMAIN-SUFFIX,facetime.apple.com,✈️ TELEGRAM
+  - DOMAIN-SUFFIX,apple-dns.net,✈️ TELEGRAM
+
+  # ===== Telegram =====
+  - RULE-SET,telegram,✈️ TELEGRAM
+  - IP-CIDR,149.154.160.0/20,✈️ TELEGRAM,no-resolve
+  - IP-CIDR,91.108.4.0/22,✈️ TELEGRAM,no-resolve
+  - IP-CIDR,91.108.8.0/22,✈️ TELEGRAM,no-resolve
+  - IP-CIDR,91.108.12.0/22,✈️ TELEGRAM,no-resolve
+  - IP-CIDR,91.108.16.0/22,✈️ TELEGRAM,no-resolve
+  - IP-CIDR,91.108.56.0/22,✈️ TELEGRAM,no-resolve
+  - DOMAIN-SUFFIX,telegram.org,✈️ TELEGRAM
+  - DOMAIN-SUFFIX,t.me,✈️ TELEGRAM
+  - DOMAIN-SUFFIX,telegra.ph,✈️ TELEGRAM
+  - DOMAIN-SUFFIX,tdesktop.com,✈️ TELEGRAM
+  - DOMAIN-SUFFIX,telegram.dog,✈️ TELEGRAM
+
+  # ===== GitHub + Copilot =====
+  - DOMAIN-SUFFIX,github.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,api.github.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,githubusercontent.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,raw.githubusercontent.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,objects.githubusercontent.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,codeload.github.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,githubassets.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,avatars.githubusercontent.com,🎯 MAIN-PROXY
+
+  - DOMAIN-SUFFIX,githubcopilot.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,api.githubcopilot.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,proxy.githubcopilot.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,telemetry.githubcopilot.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,copilot.github.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,copilot-proxy.githubusercontent.com,🎯 MAIN-PROXY
+
+  - DOMAIN-SUFFIX,visualstudio.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,vsassets.io,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,login.microsoftonline.com,🎯 MAIN-PROXY
+
+  # ===== Банки/магазины (DIRECT) =====
+  - DOMAIN-SUFFIX,otpbank.ru,DIRECT
+  - DOMAIN,online.otpbank.ru,DIRECT
+  - IP-CIDR,194.50.120.204/32,DIRECT,no-resolve
+  - IP-CIDR,91.221.165.177/32,DIRECT,no-resolve
+  - DOMAIN-SUFFIX,ozon.ru,DIRECT
+  - IP-CIDR,185.73.193.68/32,DIRECT,no-resolve
+  - IP-CIDR,185.73.194.82/32,DIRECT,no-resolve
+  - DOMAIN-SUFFIX,finance.ozon.ru,DIRECT
+  - IP-CIDR,31.130.140.3/32,DIRECT,no-resolve
+  - IP-CIDR,31.130.141.3/32,DIRECT,no-resolve
+  - IP-CIDR,31.130.142.3/32,DIRECT,no-resolve
+  - IP-CIDR,31.130.143.3/32,DIRECT,no-resolve
+  - IP-CIDR,31.130.143.67/32,DIRECT,no-resolve
+  - IP-CIDR,31.130.143.131/32,DIRECT,no-resolve
+  - DOMAIN-SUFFIX,wildberries.ru,DIRECT
+  - DOMAIN-SUFFIX,wb.ru,DIRECT
+  - IP-CIDR,185.62.202.2/32,DIRECT,no-resolve
+  - IP-CIDR,185.138.253.1/32,DIRECT,no-resolve
+  - IP-CIDR,185.138.255.1/32,DIRECT,no-resolve
+  - IP-CIDR,213.184.155.142/32,DIRECT,no-resolve
+
+  # Яндекс
+  - DOMAIN-SUFFIX,ya.ru,DIRECT
+  - DOMAIN-SUFFIX,yandex.ru,DIRECT
+  - IP-CIDR,77.88.44.242/32,DIRECT,no-resolve
+  - IP-CIDR,77.88.55.242/32,DIRECT,no-resolve
+  - IP-CIDR,5.255.255.242/32,DIRECT,no-resolve
+  - IP-CIDR6,2a02:6b8::2:242/128,DIRECT,no-resolve
+  - IP-CIDR,77.88.55.88/32,DIRECT,no-resolve
+  - IP-CIDR,77.88.44.55/32,DIRECT,no-resolve
+  - IP-CIDR,5.255.255.77/32,DIRECT,no-resolve
+  - IP-CIDR6,2a02:6b8:a::a/128,DIRECT,no-resolve
+  - DOMAIN-SUFFIX,yabank.yandex.ru,DIRECT
+  - IP-CIDR,87.250.254.18/32,DIRECT,no-resolve
+  - IP-CIDR6,2a02:6b8::469/128,DIRECT,no-resolve
+
+  # Tele2 / t2
+  - DOMAIN-SUFFIX,t2.ru,DIRECT
+  - DOMAIN-SUFFIX,tele2.ru,DIRECT
+  - IP-CIDR,37.220.163.23/32,DIRECT,no-resolve
+  - IP-CIDR,195.209.67.49/32,DIRECT,no-resolve
+  - IP-CIDR,46.235.188.81/32,DIRECT,no-resolve
+  - IP-CIDR,46.235.185.253/32,DIRECT,no-resolve
+  - IP-CIDR,212.193.152.180/32,DIRECT,no-resolve
+
+  # МТС
+  - DOMAIN-SUFFIX,mts.ru,DIRECT
+  - DOMAIN-SUFFIX,lk.mts.ru,DIRECT
+  - DOMAIN-SUFFIX,mtsbank.ru,DIRECT
+  - IP-CIDR,178.248.237.216/32,DIRECT,no-resolve
+  - IP-CIDR,185.163.159.137/32,DIRECT,no-resolve
+
+  # Локалки
+  - IP-CIDR,82.208.122.159/32,DIRECT
   - DOMAIN-SUFFIX,local,DIRECT
-  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
-  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
-  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,127.0.0.0/8,DIRECT
+  - IP-CIDR,192.168.0.0/16,DIRECT
+  - IP-CIDR,10.0.0.0/8,DIRECT
+  - IP-CIDR,172.16.0.0/12,DIRECT
 
-  # Россия — напрямую
-  - GEOIP,RU,DIRECT
-  - GEOSITE,ru,DIRECT
+  # Blizzard
+  - AND,((NETWORK,TCP),(DST-PORT,1119)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,3724)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,1119)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,3724)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,6113)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,6113)),DIRECT
+  - AND,((NETWORK,TCP),(DST-PORT,16190)),DIRECT
+  - AND,((NETWORK,UDP),(DST-PORT,16190)),DIRECT
 
-  # Всё остальное — через прокси
-  - MATCH,PROXY
+  - DOMAIN-SUFFIX,xxee.ru,DIRECT
+
+  # Системные порты
+  - DST-PORT,123,DIRECT
+
+  # Блокировка проблемных адресов
+  - IP-CIDR,5.28.195.1/32,REJECT
+  - DOMAIN,5.28.195.1,REJECT
+
+  # Блокировка WPAD
+  - DOMAIN-SUFFIX,wpad,REJECT
+  - DOMAIN-KEYWORD,wpad,REJECT
+  - DOMAIN-SUFFIX,wpad.dlink,REJECT
+
+  # Прочее DIRECT
+  - DOMAIN-SUFFIX,3gppnetwork.org,DIRECT
+  - DOMAIN-SUFFIX,rutube.ru,DIRECT
+  - DOMAIN-SUFFIX,miwifi.com,DIRECT
+  - DOMAIN-SUFFIX,mi.com,DIRECT
+  - DOMAIN-SUFFIX,mixupload.org,DIRECT
+  - DOMAIN-SUFFIX,docs.comfy.org,DIRECT
+  - DOMAIN-SUFFIX,huggingface.co,DIRECT
+
+  # Иностранные сервисы через прокси
+  - DOMAIN-KEYWORD,boosty,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,boosty.to,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,boosty.media,🎯 MAIN-PROXY
+  - RULE-SET,whatsapp,🎯 MAIN-PROXY
+  - RULE-SET,openai,🎯 MAIN-PROXY
+  - RULE-SET,twitter,🎯 MAIN-PROXY
+  - RULE-SET,instagram,🎯 MAIN-PROXY
+  - RULE-SET,facebook,🎯 MAIN-PROXY
+  - RULE-SET,notion,🎯 MAIN-PROXY
+
+  # Microsoft общий
+  - RULE-SET,microsoft,🎯 MAIN-PROXY
+  - RULE-SET,oracle,🎯 MAIN-PROXY
+
+  - DOMAIN-SUFFIX,xerox.co.uk,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,xerox.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,4pda.to,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,4pda.ru,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,4pda.ws,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,zerolab.net,🎯 MAIN-PROXY
+  - IP-CIDR,2.56.178.172/32,🎯 MAIN-PROXY
+  - IP-CIDR,5.252.176.150/32,🎯 MAIN-PROXY
+  - IP-CIDR,31.131.253.250/32,🎯 MAIN-PROXY
+  - IP-CIDR,35.186.227.140/32,🎯 MAIN-PROXY
+  - IP-CIDR,85.192.30.120/32,🎯 MAIN-PROXY
+  - IP-CIDR,104.22.34.226/32,🎯 MAIN-PROXY
+  - IP-CIDR,108.181.60.131/32,🎯 MAIN-PROXY
+  - IP-CIDR,185.236.234.42/32,🎯 MAIN-PROXY
+  - IP-CIDR,188.114.98.228/32,🎯 MAIN-PROXY
+
+  # Блокировка РКН
+  - RULE-SET,ru-blocked,🎯 MAIN-PROXY
+
+  # Российский трафик (DIRECT)
+  - RULE-SET,ru_critical,DIRECT
+  - DOMAIN-SUFFIX,ru,DIRECT
+  - DOMAIN-SUFFIX,рф,DIRECT
+  - GEOIP,RU,DIRECT,no-resolve
+
+  # Особые исключения
+  - DOMAIN-SUFFIX,api.vigo.one,DIRECT
+
+  # Тесты сети Windows
+  - DOMAIN-SUFFIX,mp.microsoft.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,msftconnecttest.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,msftncsi.com,🎯 MAIN-PROXY
+  - DOMAIN-SUFFIX,edgesuite.net,🎯 MAIN-PROXY
+
+  # Финальное правило
+  - MATCH,🎯 MAIN-PROXY
