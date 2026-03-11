@@ -6,7 +6,7 @@ http:
   session_ttl: 720h
 users:
   - name: root
-    password: '$2b$10$lOOoSmdzB2jZQ73mugmktOQ6L//NzV.RGbzGzbND7w6HptAqIkHB.'
+    password: '$2y$10$REPLACE_THIS_WITH_YOUR_BCRYPT_HASH'
 auth_attempts: 5
 block_auth_min: 15
 http_proxy: ""
@@ -105,17 +105,9 @@ statistics:
   ignored_enabled: false
 filters:
   - enabled: true
-    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt
-    name: AdGuard DNS filter
-    id: 1
-  - enabled: false
-    url: https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt
-    name: AdAway Default Blocklist
-    id: 2
-  - enabled: true
     url: https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt
     name: AdGuard DNS filter
-    id: 1772828389
+    id: 1
   - enabled: true
     url: https://adaway.org/hosts.txt
     name: AdAway Default Blocklist
@@ -177,7 +169,8 @@ filtering:
   safebrowsing_block_host: standard-block.dns.adguard.com
   rewrites: []
   safe_fs_patterns:
-    - /var/lib/adguardhome/userfilters/*
+    - /opt/adguardhome/userfilters/*
+    - /etc/adguardhome/userfilters/*
   safebrowsing_cache_size: 1048576
   safesearch_cache_size: 1048576
   parental_cache_size: 1048576
