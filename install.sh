@@ -60,6 +60,12 @@ luci/view/adguardhome/dashboard.js
 echo "==> Router Setup — установка SSClash + AdGuard Home"
 echo ""
 
+# ── Исправление wget (OpenWrt 25.12.0: wget → wget-nossl без HTTPS) ────────
+if [ -f /bin/uclient-fetch ] && [ "$(readlink /usr/bin/wget 2>/dev/null)" != "/bin/uclient-fetch" ]; then
+    echo "==> Исправление wget (uclient-fetch, поддержка HTTPS)"
+    ln -sf /bin/uclient-fetch /usr/bin/wget
+fi
+
 # ── Определяем источник файлов ────────────────────────────────────────────
 SELF_DIR="$(cd "$(dirname "$0")" && pwd 2>/dev/null || echo /tmp)"
 LOCAL_PATCHES=""
