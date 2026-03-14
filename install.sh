@@ -66,6 +66,28 @@ if [ -f /bin/uclient-fetch ] && [ "$(readlink /usr/bin/wget 2>/dev/null)" != "/b
     ln -sf /bin/uclient-fetch /usr/bin/wget
 fi
 
+# ── Зеркало apk: китайские репозитории (доступны из России без VPN) ────────
+# downloads.openwrt.org заблокирован в России — используем TUNA mirror
+_APK_REPO_FILE="/etc/apk/repositories"
+_OPENWRT_VER="25.12.0"
+_OPENWRT_ARCH="aarch64_cortex-a53"
+_OPENWRT_TARGET="mediatek/filogic"
+_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/openwrt"
+
+# Настраиваем только если репозиторий ещё не переключён на зеркало
+if [ ! -f "$_APK_REPO_FILE" ] || ! grep -q "tuna.tsinghua" "$_APK_REPO_FILE" 2>/dev/null; then
+    echo "==> Настройка зеркала apk (TUNA, Китай)"
+    mkdir -p /etc/apk
+    cat > "$_APK_REPO_FILE" << REPOEOF
+${_MIRROR}/releases/${_OPENWRT_VER}/targets/${_OPENWRT_TARGET}/packages
+${_MIRROR}/releases/${_OPENWRT_VER}/packages/${_OPENWRT_ARCH}/base
+${_MIRROR}/releases/${_OPENWRT_VER}/packages/${_OPENWRT_ARCH}/luci
+${_MIRROR}/releases/${_OPENWRT_VER}/packages/${_OPENWRT_ARCH}/packages
+${_MIRROR}/releases/${_OPENWRT_VER}/packages/${_OPENWRT_ARCH}/routing
+REPOEOF
+    apk update --quiet 2>/dev/null || true
+fi
+
 # ── Определяем источник файлов ────────────────────────────────────────────
 SELF_DIR="$(cd "$(dirname "$0")" && pwd 2>/dev/null || echo /tmp)"
 LOCAL_PATCHES=""
