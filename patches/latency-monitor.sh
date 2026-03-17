@@ -209,7 +209,10 @@ switch_group() {
 # ================================================================
 gemini_access_ok() {
     local response proxy_auth location gl_code
-    # Test via Mihomo HTTP proxy (127.0.0.1:7890) — HEAD request to gemini.google.com.
+    # Test via Mihomo SOCKS5 proxy (127.0.0.1:7891) — HEAD request to gemini.google.com.
+    # Port 7891 = socks-port (dedicated SOCKS5), binds to IPv4 0.0.0.0.
+    # Port 7890 = mixed-port, creates IPv6 dual-stack socket (:::7890) which is
+    # inaccessible when disable_ipv6=1 — use 7891 instead.
     # Direct curl via TPROXY doesn't work for router-originated traffic:
     # fake-ip dst → kernel routes via pppoe-wan → oifname "pppoe-wan" return
     # in OUTPUT mangle chain → fwmark not set → packet exits WAN directly → timeout.
@@ -221,13 +224,13 @@ gemini_access_ok() {
     ' /opt/clash/config.yaml 2>/dev/null)
     if [ -n "$proxy_auth" ]; then
         response=$(curl -s --max-time 8 \
-            --proxy "http://127.0.0.1:7890" \
+            --socks5 "127.0.0.1:7891" \
             --proxy-user "$proxy_auth" \
             -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
             "https://gemini.google.com/" 2>/dev/null)
     else
         response=$(curl -s --max-time 8 \
-            --proxy "http://127.0.0.1:7890" \
+            --socks5 "127.0.0.1:7891" \
             -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
             "https://gemini.google.com/" 2>/dev/null)
     fi
