@@ -42,7 +42,7 @@ GEMINI_GROUP="${GEMINI_GROUP:-🤖 GEMINI}"
 MAIN_GROUP="${MAIN_GROUP:-PrvtVPN All Auto}"
 SWITCH_THRESHOLD="${SWITCH_THRESHOLD:-20}"
 MIHOMO_SOCKS=$(uci -q get cf_optimizer.main.mihomo_socks)
-MIHOMO_SOCKS="${MIHOMO_SOCKS:-}"
+MIHOMO_SOCKS="${MIHOMO_SOCKS:-127.0.0.1:7891}"
 
 # --- Lock ---
 if [ -f "$LOCK_FILE" ]; then
@@ -198,25 +198,21 @@ switch_group() {
 # Test Gemini web accessibility through the currently active GEMINI proxy.
 # Call AFTER switch_group + sleep 2 to let Mihomo update routing.
 #
-# Logic: HEAD gemini.google.com + check GDPR consent redirect + gl= code
-#   - IP detected as EU/allowed → Google redirects to consent.google.com?gl=XX
-#     where XX is a non-blocked country code
-#   - Russian/CIS IP → consent redirect with gl=RU/BY/KZ → BLOCKED
-#   - Blacklisted datacenter IP → 200 directly, no consent redirect → BLOCKED
-#   - Timeout / no response → proxy down → BLOCKED
+# Logic: HEAD gemini.google.com → check HTTP status + Location header
+#   - Datacenter VPN IP → HTTP 200 directly (no consent redirect) → ACCESSIBLE
+#   - EU residential IP → 302 → consent.google.com?gl=XX (non-RU/BY/KZ) → ACCESSIBLE
+#   - Russian/CIS IP   → 302 → consent.google.com?gl=RU/BY/KZ → BLOCKED
+#   - Geo-banned IP    → 302 to non-consent URL or 4xx → BLOCKED
+#   - Timeout          → proxy down → BLOCKED
+#
+# Port 7891 = socks-port (IPv4 0.0.0.0:7891).
+# Port 7890 = mixed-port, creates IPv6 socket (:::7890), inaccessible with disable_ipv6=1.
+# Direct curl via TPROXY does not work for router-originated traffic (OUTPUT chain skips fwmark).
 #
 # Returns: 0 = Gemini accessible, 1 = blocked or unreachable
 # ================================================================
 gemini_access_ok() {
-    local response proxy_auth location gl_code
-    # Test via Mihomo SOCKS5 proxy (127.0.0.1:7891) — HEAD request to gemini.google.com.
-    # Port 7891 = socks-port (dedicated SOCKS5), binds to IPv4 0.0.0.0.
-    # Port 7890 = mixed-port, creates IPv6 dual-stack socket (:::7890) which is
-    # inaccessible when disable_ipv6=1 — use 7891 instead.
-    # Direct curl via TPROXY doesn't work for router-originated traffic:
-    # fake-ip dst → kernel routes via pppoe-wan → oifname "pppoe-wan" return
-    # in OUTPUT mangle chain → fwmark not set → packet exits WAN directly → timeout.
-    # User-Agent header required — without it Google may skip the consent redirect.
+    local response proxy_auth http_code location gl_code
     proxy_auth=$(awk '
         /^authentication:/ { in_auth=1; next }
         in_auth && /^  - "/ { sub(/^  - "/, ""); sub(/".*/, ""); print; exit }
@@ -235,16 +231,35 @@ gemini_access_ok() {
             "https://gemini.google.com/" 2>/dev/null)
     fi
     [ -z "$response" ] && return 1
-    # Must redirect to consent.google.com (EU/allowed geo) — direct 200 means blocked datacenter IP
-    location=$(echo "$response" | grep -i "location:.*consent.google.com" | head -1)
+
+    # Extract HTTP status code from first response line
+    http_code=$(echo "$response" | grep -m1 "^HTTP/" | awk '{print $2}')
+
+    # Case 1: HTTP 200 — datacenter IP served Gemini directly → ACCESSIBLE
+    [ "$http_code" = "200" ] && { GEMINI_GL_CODE="DC"; return 0; }
+
+    # Case 2: Redirect — inspect Location header
+    location=$(echo "$response" | grep -i "^location:" | head -1)
     [ -z "$location" ] && return 1
-    # Extract gl= country code and reject Russia/CIS where Gemini is blocked
-    gl_code=$(echo "$location" | grep -oi 'gl=[A-Za-z][A-Za-z]' | head -1 | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
-    case "$gl_code" in
-        RU|BY|KZ) return 1 ;;
-    esac
-    GEMINI_GL_CODE="${gl_code:-?}"
-    return 0
+
+    # Case 2a: consent.google.com redirect (GDPR/EU residential IPs)
+    if echo "$location" | grep -qi "consent.google.com"; then
+        gl_code=$(echo "$location" | grep -oi 'gl=[A-Za-z][A-Za-z]' | head -1 | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
+        case "$gl_code" in
+            RU|BY|KZ) return 1 ;;
+        esac
+        GEMINI_GL_CODE="${gl_code:-EU}"
+        return 0
+    fi
+
+    # Case 2b: accounts.google.com (auth required but geo-accessible) → ACCESSIBLE
+    if echo "$location" | grep -qi "accounts.google.com"; then
+        GEMINI_GL_CODE="AUTH"
+        return 0
+    fi
+
+    # Case 2c: any other redirect (geo-block page, error, etc.) → BLOCKED
+    return 1
 }
 
 # ================================================================
