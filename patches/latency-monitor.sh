@@ -342,38 +342,84 @@ PROXYEOF
     rm -f "$tmp_cand"
 
     # ── Phase 2: Gemini geo-block validation (requires SOCKS5) ────────────────
-    # Temporarily switch to each candidate (fastest first) and probe Gemini API.
-    # Google returns body "location is not supported" for geo-blocked IPs.
-    # First accessible candidate wins — loop breaks immediately.
+    # Strategy: test current proxy FIRST without switching.
+    # Only search for alternatives when current is actually broken.
+    # This prevents unnecessary group switches that expose users to bad servers.
+    #
+    # Upgrade: if current is OK but a candidate is SWITCH_THRESHOLD% faster,
+    # test only that one candidate (at most 1 switch, not a full sweep).
     local best_proxy=""
     local best_delay=9999
 
     if [ -n "$MIHOMO_SOCKS" ]; then
         logger -t "$LOG_TAG" "GEMINI: phase 2 — Gemini access validation via ${MIHOMO_SOCKS}"
         local validated=0
-        while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            local d px
-            d=$(echo "$line" | cut -d'|' -f1 | awk '{print $1+0}')
-            px=$(echo "$line" | cut -d'|' -f2-)
-            [ -z "$px" ] && continue
-            switch_group "$GEMINI_GROUP" "$px"
-            sleep 2
+
+        # Step 1: test current proxy without switching (Phase 1 left GEMINI group intact)
+        if [ -n "$current_proxy" ] && [ "$current_delay" -lt 9000 ] 2>/dev/null; then
             GEMINI_GL_CODE="?"
             if gemini_access_ok; then
-                logger -t "$LOG_TAG" "  [gemini-ok]      '${px}' (${d}ms) gl=${GEMINI_GL_CODE}"
-                best_proxy="$px"
-                best_delay=$d
+                logger -t "$LOG_TAG" "  [gemini-ok]      current '${current_proxy}' (${current_delay}ms) gl=${GEMINI_GL_CODE}"
+                best_proxy="$current_proxy"
+                best_delay=$current_delay
                 validated=1
-                break
             else
-                logger -t "$LOG_TAG" "  [gemini-blocked] '${px}' — IP geo-blocked"
+                logger -t "$LOG_TAG" "  [gemini-blocked] current '${current_proxy}' — searching alternatives"
             fi
-        done << CEOF
+        fi
+
+        # Step 2: if current is OK, check for a significantly faster upgrade (at most 1 switch)
+        if [ "$validated" = "1" ]; then
+            local top_line top_proxy top_delay upg_threshold
+            top_line=$(echo "$sorted_cand" | head -1)
+            top_proxy=$(echo "$top_line" | cut -d'|' -f2-)
+            top_delay=$(echo "$top_line" | cut -d'|' -f1 | awk '{print $1+0}')
+            upg_threshold=$(awk "BEGIN { printf \"%d\", $current_delay * (100 - $SWITCH_THRESHOLD) / 100 }")
+            if [ -n "$top_proxy" ] && [ "$top_proxy" != "$current_proxy" ] && \
+               [ "$top_delay" -lt "$upg_threshold" ] 2>/dev/null; then
+                logger -t "$LOG_TAG" "  [upgrade-check]  '${top_proxy}' (${top_delay}ms) is ${SWITCH_THRESHOLD}%+ faster — validating"
+                switch_group "$GEMINI_GROUP" "$top_proxy"
+                sleep 2
+                GEMINI_GL_CODE="?"
+                if gemini_access_ok; then
+                    logger -t "$LOG_TAG" "  [gemini-ok]      upgrade '${top_proxy}' (${top_delay}ms) gl=${GEMINI_GL_CODE}"
+                    best_proxy="$top_proxy"
+                    best_delay=$top_delay
+                else
+                    logger -t "$LOG_TAG" "  [gemini-blocked] upgrade candidate blocked — restoring current"
+                    switch_group "$GEMINI_GROUP" "$current_proxy"
+                fi
+            fi
+        fi
+
+        # Step 3: current was blocked — sweep alternatives (skip current, fastest-first)
+        if [ "$validated" = "0" ]; then
+            while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                local d px
+                d=$(echo "$line" | cut -d'|' -f1 | awk '{print $1+0}')
+                px=$(echo "$line" | cut -d'|' -f2-)
+                if [ -z "$px" ] || [ "$px" = "$current_proxy" ]; then
+                    continue
+                fi
+                switch_group "$GEMINI_GROUP" "$px"
+                sleep 2
+                GEMINI_GL_CODE="?"
+                if gemini_access_ok; then
+                    logger -t "$LOG_TAG" "  [gemini-ok]      '${px}' (${d}ms) gl=${GEMINI_GL_CODE}"
+                    best_proxy="$px"
+                    best_delay=$d
+                    validated=1
+                    break
+                else
+                    logger -t "$LOG_TAG" "  [gemini-blocked] '${px}' — IP geo-blocked"
+                fi
+            done << CEOF
 $sorted_cand
 CEOF
-        if [ "$validated" = "0" ]; then
-            logger -t "$LOG_TAG" "GEMINI: WARNING — all candidates geo-blocked! Falling back to fastest by latency"
+            if [ "$validated" = "0" ]; then
+                logger -t "$LOG_TAG" "GEMINI: WARNING — all candidates geo-blocked! Falling back to fastest by latency"
+            fi
         fi
     fi
 
