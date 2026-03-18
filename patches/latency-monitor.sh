@@ -198,53 +198,71 @@ switch_group() {
 # Test Gemini web accessibility through the currently active GEMINI proxy.
 # Call AFTER switch_group + sleep 2 to let Mihomo update routing.
 #
-# Logic: HEAD gemini.google.com → check HTTP status + Location header
-#   - Datacenter VPN IP → HTTP 200 directly (no consent redirect) → ACCESSIBLE
-#   - EU residential IP → 302 → consent.google.com?gl=XX (non-RU/BY/KZ) → ACCESSIBLE
-#   - Russian/CIS IP   → 302 → consent.google.com?gl=RU/BY/KZ → BLOCKED
-#   - Geo-banned IP    → 302 to non-consent URL or 4xx → BLOCKED
-#   - Timeout          → proxy down → BLOCKED
+# Uses GET + follow redirects to detect all block types:
+#   - IP on Google Abuse list → url contains "google_abuse" → BLOCKED
+#   - Geo-blocked IP (RU/CIS) → consent.google.com?gl=RU/BY/KZ → BLOCKED
+#   - Clean datacenter IP     → final url = gemini.google.com, http 200 → ACCESSIBLE
+#   - GDPR consent (EU IP)    → consent.google.com?gl=XX (non-blocked) → ACCESSIBLE
+#   - Auth required           → accounts.google.com → ACCESSIBLE
+#   - Timeout / no response   → BLOCKED
+#
+# HEAD requests miss the google_abuse redirect chain (HEAD returns 200/204
+# while a real browser GET gets redirected to an abuse challenge page).
 #
 # Port 7891 = socks-port (IPv4 0.0.0.0:7891).
 # Port 7890 = mixed-port, creates IPv6 socket (:::7890), inaccessible with disable_ipv6=1.
-# Direct curl via TPROXY does not work for router-originated traffic (OUTPUT chain skips fwmark).
+# Direct curl via TPROXY does not work for router-originated traffic.
 #
 # Returns: 0 = Gemini accessible, 1 = blocked or unreachable
 # ================================================================
 gemini_access_ok() {
-    local response proxy_auth http_code location gl_code
+    local proxy_auth result final_url http_code gl_code
     proxy_auth=$(awk '
         /^authentication:/ { in_auth=1; next }
         in_auth && /^  - "/ { sub(/^  - "/, ""); sub(/".*/, ""); print; exit }
         in_auth && !/^  / { exit }
     ' /opt/clash/config.yaml 2>/dev/null)
+
+    # GET + follow redirects, discard body, capture final URL and HTTP code.
+    # --max-redirs 3 is enough for normal flows (consent/accounts redirect once or twice).
+    # Abuse-blacklisted IPs loop through google_abuse redirects — caught by url check below.
     if [ -n "$proxy_auth" ]; then
-        response=$(curl -s --max-time 8 \
+        result=$(curl -s --max-time 12 \
             --socks5 "127.0.0.1:7891" \
             --proxy-user "$proxy_auth" \
-            -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -L --max-redirs 3 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            -w "\n%{url_effective} %{http_code}" -o /dev/null \
             "https://gemini.google.com/" 2>/dev/null)
     else
-        response=$(curl -s --max-time 8 \
+        result=$(curl -s --max-time 12 \
             --socks5 "127.0.0.1:7891" \
-            -I -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -L --max-redirs 3 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            -w "\n%{url_effective} %{http_code}" -o /dev/null \
             "https://gemini.google.com/" 2>/dev/null)
     fi
-    [ -z "$response" ] && return 1
 
-    # Extract HTTP status code from first response line
-    http_code=$(echo "$response" | grep -m1 "^HTTP/" | awk '{print $2}')
+    final_url=$(echo "$result" | tail -1 | awk '{print $1}')
+    http_code=$(echo "$result"  | tail -1 | awk '{print $2}')
+    [ -z "$final_url" ] && return 1
 
-    # Case 1: HTTP 200 — datacenter IP served Gemini directly → ACCESSIBLE
-    [ "$http_code" = "200" ] && { GEMINI_GL_CODE="DC"; return 0; }
+    # Google Abuse blacklist: IP flagged for abuse → redirect loop with google_abuse param
+    echo "$final_url" | grep -q "google_abuse" && return 1
 
-    # Case 2: Redirect — inspect Location header
-    location=$(echo "$response" | grep -i "^location:" | head -1)
-    [ -z "$location" ] && return 1
+    # Final destination: gemini.google.com — datacenter IP served Gemini directly
+    if echo "$final_url" | grep -q "gemini\.google\.com"; then
+        [ "$http_code" = "200" ] || [ "$http_code" = "204" ] && {
+            GEMINI_GL_CODE="DC"; return 0
+        }
+        return 1
+    fi
 
-    # Case 2a: consent.google.com redirect (GDPR/EU residential IPs)
-    if echo "$location" | grep -qi "consent.google.com"; then
-        gl_code=$(echo "$location" | grep -oi 'gl=[A-Za-z][A-Za-z]' | head -1 | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
+    # GDPR consent page: check country code
+    if echo "$final_url" | grep -q "consent\.google\.com"; then
+        gl_code=$(echo "$final_url" | grep -oi 'gl=[A-Za-z][A-Za-z]' | head -1 | cut -d= -f2 | tr '[:lower:]' '[:upper:]')
         case "$gl_code" in
             RU|BY|KZ) return 1 ;;
         esac
@@ -252,13 +270,12 @@ gemini_access_ok() {
         return 0
     fi
 
-    # Case 2b: accounts.google.com (auth required but geo-accessible) → ACCESSIBLE
-    if echo "$location" | grep -qi "accounts.google.com"; then
+    # Auth required (accounts.google.com) — geo-accessible but needs login
+    if echo "$final_url" | grep -q "accounts\.google\.com"; then
         GEMINI_GL_CODE="AUTH"
         return 0
     fi
 
-    # Case 2c: any other redirect (geo-block page, error, etc.) → BLOCKED
     return 1
 }
 
