@@ -303,6 +303,39 @@ optimize_gemini() {
     current_proxy=$(get_group_current "$GEMINI_GROUP")
     logger -t "$LOG_TAG" "GEMINI: current='${current_proxy:-none}'"
 
+    # ── Fast pre-check: geo-test current proxy BEFORE expensive Phase 1 ────────
+    # Cron runs every minute. If current is healthy AND Phase-1 ran recently,
+    # skip Phase 1 entirely (saves ~90 sec). If blocked → run full search.
+    local FULL_RUN_MARKER="/var/run/latency-monitor-full-run"
+    local FULL_INTERVAL=300
+    local quick_ok=0
+
+    if [ -n "$MIHOMO_SOCKS" ] && [ -n "$current_proxy" ]; then
+        GEMINI_GL_CODE="?"
+        if gemini_access_ok; then
+            logger -t "$LOG_TAG" "  [pre-ok]   '${current_proxy}' gl=${GEMINI_GL_CODE}"
+            quick_ok=1
+        else
+            logger -t "$LOG_TAG" "  [pre-fail] '${current_proxy}' BLOCKED — running full search"
+        fi
+    fi
+
+    if [ "$quick_ok" = "1" ]; then
+        local last_full now elapsed
+        last_full=$(cat "$FULL_RUN_MARKER" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        elapsed=$((now - last_full))
+        if [ "$elapsed" -lt "$FULL_INTERVAL" ]; then
+            logger -t "$LOG_TAG" "GEMINI: OK (Phase-1 ran ${elapsed}s ago) — skipping full test"
+            {
+                echo "GEMINI_PROXY=${current_proxy}"
+                echo "GEMINI_STATUS=ok"
+            } >> "$STATUS_FILE"
+            return 0
+        fi
+        logger -t "$LOG_TAG" "GEMINI: OK but Phase-1 due (${elapsed}s ago) — refreshing candidates"
+    fi
+
     local proxy_count
     proxy_count=$(echo "$proxies" | wc -l)
     logger -t "$LOG_TAG" "GEMINI: phase 1 — latency test (${proxy_count} proxies)"
@@ -329,6 +362,7 @@ $proxies
 PROXYEOF
 
     logger -t "$LOG_TAG" "GEMINI: tested=${tested}, current_delay=${current_delay}ms"
+    date +%s > "$FULL_RUN_MARKER"
 
     if [ ! -s "$tmp_cand" ]; then
         rm -f "$tmp_cand"
@@ -355,16 +389,18 @@ PROXYEOF
         logger -t "$LOG_TAG" "GEMINI: phase 2 — Gemini access validation via ${MIHOMO_SOCKS}"
         local validated=0
 
-        # Step 1: test current proxy without switching (Phase 1 left GEMINI group intact)
+        # Step 1: geo-check current proxy.
+        # pre-check already ran before Phase 1 — reuse result, skip re-test.
+        #   quick_ok=1 → current passed pre-check → validated
+        #   quick_ok=0 → current failed pre-check → skip to sweep
         if [ -n "$current_proxy" ] && [ "$current_delay" -lt 9000 ] 2>/dev/null; then
-            GEMINI_GL_CODE="?"
-            if gemini_access_ok; then
-                logger -t "$LOG_TAG" "  [gemini-ok]      current '${current_proxy}' (${current_delay}ms) gl=${GEMINI_GL_CODE}"
+            if [ "$quick_ok" = "1" ]; then
+                logger -t "$LOG_TAG" "  [gemini-ok]      current '${current_proxy}' (${current_delay}ms) gl=${GEMINI_GL_CODE} [pre-checked]"
                 best_proxy="$current_proxy"
                 best_delay=$current_delay
                 validated=1
             else
-                logger -t "$LOG_TAG" "  [gemini-blocked] current '${current_proxy}' — searching alternatives"
+                logger -t "$LOG_TAG" "  [gemini-blocked] current '${current_proxy}' (pre-check failed) — searching alternatives"
             fi
         fi
 
