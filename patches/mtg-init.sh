@@ -6,7 +6,9 @@
 # Secret generation:
 #   mtg generate-secret --hex google.com    # fake-TLS domain fronting
 #
-# Chain: Telegram client → mtg:443 → Mihomo SOCKS5:7891 → TELEGRAM(AWG) → Telegram
+# Chain: Telegram client → mtg:443 (fake-TLS) → Telegram напрямую
+# Telegram доступен напрямую (разблокирован), AWG не нужен — лишний hop.
+# TCP 149.154.167.91:443 connect=55ms напрямую без потерь.
 
 START=96
 STOP=10
@@ -19,7 +21,6 @@ start_service() {
         -n 1.1.1.1 \
         -c 8192 \
         -t 15s \
-        -s socks5://root:4bu-j6m-7Bf-5JK@127.0.0.1:7891 \
         0.0.0.0:443 \
         7hk3Z6AyCsbpu4aLoUPQ9J1nb29nbGUuY29t
     procd_set_param respawn 3600 5 5
