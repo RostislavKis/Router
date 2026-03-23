@@ -84,22 +84,62 @@ case "$1" in
             { print }
         ' "$MIHOMO_CONFIG" > "${MIHOMO_CONFIG}.tmp"
 
-        # Pass 2: insert dialer-proxy after each "  - name:" in proxies section
+        # Pass 2: insert dialer-proxy after each "  - name:" in proxies section,
+        # skipping: xray-fragment itself and wireguard/amnezia-wg type proxies
+        # (xray-fragment is TCP-only SOCKS5; WireGuard uses UDP → incompatible)
         awk '
-            /^proxies:/                         { in_p=1 }
-            /^[a-zA-Z]/ && !/^proxies:/        { in_p=0 }
+            BEGIN { in_p=0; buf=""; is_skip=0 }
+
+            /^proxies:/                         { in_p=1; print; next }
+            in_p && /^[a-zA-Z]/ && !/^proxies:/ {
+                if (buf != "") { out_block(buf, is_skip); buf=""; is_skip=0 }
+                in_p=0; print; next
+            }
             in_p && /^  - name:/ {
-                print
-                print "    dialer-proxy: xray-fragment"
+                if (buf != "") { out_block(buf, is_skip); buf=""; is_skip=0 }
+                buf=$0 "\n"
+                is_skip=($0 ~ /"xray-fragment"/)
                 next
             }
+            in_p && buf != "" && /type: wireguard|type: amnezia-wg|<<: \*warp/ {
+                is_skip=1; buf=buf $0 "\n"; next
+            }
+            in_p && buf != "" { buf=buf $0 "\n"; next }
             { print }
+            END { if (buf != "") out_block(buf, is_skip) }
+
+            function out_block(b, skip,    lines, n, i) {
+                n=split(b, lines, "\n")
+                print lines[1]
+                if (!skip) print "    dialer-proxy: xray-fragment"
+                for (i=2; i<n; i++) print lines[i]
+            }
         ' "${MIHOMO_CONFIG}.tmp" > "$MIHOMO_CONFIG"
 
         rm -f "${MIHOMO_CONFIG}.tmp"
 
+        # Ensure xray-fragment proxy definition exists at top of proxies section
+        if ! grep -q '^  - name: "xray-fragment"' "$MIHOMO_CONFIG"; then
+            awk '
+                /^proxies:/ && !done {
+                    print
+                    print "  - name: \"xray-fragment\""
+                    print "    type: socks5"
+                    print "    server: 127.0.0.1"
+                    print "    port: 10801"
+                    print ""
+                    done=1
+                    next
+                }
+                { print }
+            ' "$MIHOMO_CONFIG" > "${MIHOMO_CONFIG}.tmp"
+            mv "${MIHOMO_CONFIG}.tmp" "$MIHOMO_CONFIG"
+        fi
+
         total=$(count_proxies)
-        echo "OK: dialer-proxy: xray-fragment added to ${total} proxies"
+        # Subtract 1 for xray-fragment itself
+        actual=$((total - 1))
+        echo "OK: dialer-proxy: xray-fragment added to ${actual} proxies"
         echo "Backup saved: ${MIHOMO_CONFIG}.xray-bak"
 
         if reload_mihomo; then
@@ -116,7 +156,7 @@ case "$1" in
         fi
         cp "$MIHOMO_CONFIG" "${MIHOMO_CONFIG}.xray-bak"
 
-        # Remove all dialer-proxy: xray-fragment lines from proxies section
+        # Pass 1: remove dialer-proxy: xray-fragment lines from proxies section
         awk '
             /^proxies:/                                     { in_p=1 }
             /^[a-zA-Z]/ && !/^proxies:/                    { in_p=0 }
@@ -124,7 +164,16 @@ case "$1" in
             { print }
         ' "$MIHOMO_CONFIG" > "${MIHOMO_CONFIG}.tmp"
 
-        mv "${MIHOMO_CONFIG}.tmp" "$MIHOMO_CONFIG"
+        # Pass 2: remove the xray-fragment proxy definition block
+        awk '
+            /^  - name: "xray-fragment"/ { skip=1; next }
+            skip && /^  - name:/         { skip=0 }
+            skip && /^[^ \t]/            { skip=0 }
+            skip                         { next }
+            { print }
+        ' "${MIHOMO_CONFIG}.tmp" > "$MIHOMO_CONFIG"
+
+        rm -f "${MIHOMO_CONFIG}.tmp"
 
         echo "OK: dialer-proxy: xray-fragment removed from all proxies"
         echo "Backup saved: ${MIHOMO_CONFIG}.xray-bak"
