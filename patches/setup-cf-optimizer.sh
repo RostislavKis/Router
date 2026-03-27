@@ -49,6 +49,7 @@ mkdir -p /usr/local/bin
 cp "$SCRIPT_DIR/latency-monitor.sh"  /usr/local/bin/latency-monitor.sh  && chmod 755 /usr/local/bin/latency-monitor.sh
 cp "$SCRIPT_DIR/latency-start.sh"    /usr/local/bin/latency-start.sh    && chmod 755 /usr/local/bin/latency-start.sh
 cp "$SCRIPT_DIR/mihomo-watchdog.sh"  /usr/local/bin/mihomo-watchdog.sh  && chmod 755 /usr/local/bin/mihomo-watchdog.sh
+cp "$SCRIPT_DIR/clash-watchdog.sh"   /usr/local/bin/clash-watchdog.sh   && chmod 755 /usr/local/bin/clash-watchdog.sh
 cp "$SCRIPT_DIR/log-rotate.sh"       /usr/local/bin/log-rotate.sh       && chmod 755 /usr/local/bin/log-rotate.sh
 cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod 755 /usr/local/bin/geo-update.sh
 cp "$SCRIPT_DIR/xray-control.sh"      /usr/local/bin/xray-control.sh      && chmod 755 /usr/local/bin/xray-control.sh
@@ -67,6 +68,7 @@ cp "$SCRIPT_DIR/wifi-optimize.sh"    /usr/local/bin/wifi-optimize.sh    && chmod
 echo "    latency-monitor.sh  -> /usr/local/bin/"
 echo "    latency-start.sh    -> /usr/local/bin/"
 echo "    mihomo-watchdog.sh  -> /usr/local/bin/"
+echo "    clash-watchdog.sh   -> /usr/local/bin/"
 echo "    log-rotate.sh       -> /usr/local/bin/"
 echo "    geo-update.sh       -> /usr/local/bin/"
 echo "    xray-control.sh     -> /usr/local/bin/"
@@ -255,6 +257,7 @@ sed -i '/cf-ip-update/d'    "$CRON_FILE" 2>/dev/null || true
 sed -i '/sni-scan/d'        "$CRON_FILE" 2>/dev/null || true
 sed -i '/latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
 sed -i '/mihomo-watchdog/d' "$CRON_FILE" 2>/dev/null || true
+sed -i '/clash-watchdog/d'  "$CRON_FILE" 2>/dev/null || true
 sed -i '/log-rotate/d'      "$CRON_FILE" 2>/dev/null || true
 sed -i '/geo-update/d'      "$CRON_FILE" 2>/dev/null || true
 
@@ -264,6 +267,9 @@ echo "*/15 * * * * /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/late
 echo "* * * * * [ -f /var/run/latency-trigger ] && rm -f /var/run/latency-trigger && /usr/local/bin/latency-monitor.sh </dev/null >> /var/log/latency-monitor.log 2>&1" >> "$CRON_FILE"
 # Mihomo watchdog: every 10 minutes
 echo "*/10 * * * * /usr/local/bin/mihomo-watchdog.sh >> /var/log/mihomo-watchdog.log 2>&1" >> "$CRON_FILE"
+# Clash config backup + auto-recovery: every 30 minutes + once on boot (after 180s)
+echo "*/30 * * * * /usr/local/bin/clash-watchdog.sh >> /var/log/clash-watchdog.log 2>&1" >> "$CRON_FILE"
+echo "@reboot sleep 180 && /usr/local/bin/clash-watchdog.sh >> /var/log/clash-watchdog.log 2>&1" >> "$CRON_FILE"
 # Log rotation: daily at 03:00
 echo "0 3 * * * /usr/local/bin/log-rotate.sh" >> "$CRON_FILE"
 # Geo update: weekly Sunday at 04:00
@@ -276,6 +282,7 @@ echo "30 2 * * * /usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1" >> "$
 /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || true
 echo "    latency monitor:   every 15 min + LuCI trigger (1 min)"
 echo "    mihomo watchdog:   every 10 min"
+echo "    clash watchdog:    every 30 min + @reboot"
 echo "    log rotation:      daily 03:00"
 echo "    geo update:        weekly Sun 04:00"
 echo "    CF IP update:      every 6h (activate via LuCI)"
@@ -414,6 +421,7 @@ echo "   [FIX] NTP Boot Loop Protection — 0/1.pool.ntp.org + time.google.com +
 echo "   [ON]  Latency Monitor  — GEMINI каждые 15 мин (гистерезис ${SWITCH_THRESHOLD}%)"
 echo "   [ON]  DPI Bypass       — nftables MSS=${MSS_VALUE}"
 echo "   [ON]  Mihomo Watchdog  — перезапуск при сбое (каждые 10 мин)"
+echo "   [ON]  Clash Watchdog   — бэкап конфига + авторестор (каждые 30 мин)"
 echo "   [ON]  Geo Update       — geoip/geosite раз в неделю"
 echo "   [OFF] Xray Fragment    — включить в LuCI (бинарник уже установлен)"
 echo "   [OFF] CF IP Updater    — только для прокси за Cloudflare CDN"
@@ -422,6 +430,7 @@ echo ""
 echo " Логи:"
 echo "   tail -f /var/log/latency-monitor.log"
 echo "   tail -f /var/log/mihomo-watchdog.log"
+echo "   tail -f /var/log/clash-watchdog.log"
 echo "   logread | grep cf-optimizer"
 echo ""
 echo " Статус:"
