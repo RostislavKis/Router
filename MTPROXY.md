@@ -478,6 +478,183 @@ chmod +x /etc/hotplug.d/iface/99-mtproxy-bypass
 
 ---
 
+## Деплой MTProxy на Fly.io (низкий пинг)
+
+Fly.io — бесплатный хостинг с датацентрами в Европе (~10-30ms до Telegram DC).
+
+---
+
+### Шаг 1 — Установить flyctl (Windows)
+
+Открой PowerShell и выполни:
+
+```powershell
+iwr https://fly.io/install.ps1 -useb | iex
+```
+
+Перезапусти PowerShell, проверь:
+
+```powershell
+fly version
+```
+
+---
+
+### Шаг 2 — Войти в аккаунт
+
+```powershell
+fly auth login
+```
+
+Откроется браузер → зарегистрируйся или войди на fly.io.
+
+---
+
+### Шаг 3 — Создать папку проекта
+
+```powershell
+mkdir C:\mtg-fly
+cd C:\mtg-fly
+```
+
+Создай два файла:
+
+**`Dockerfile`** — без изменений, используем готовый образ:
+
+```dockerfile
+FROM ghcr.io/9seconds/mtg:2
+CMD ["simple-run", "-i", "prefer-ipv4", "-n", "1.1.1.1", "-c", "8192", "0.0.0.0:3128", "ТВОЙ_СЕКРЕТ"]
+```
+
+> Замени `ТВОЙ_СЕКРЕТ` на твой секрет: `7hk3Z6AyCsbpu4aLoUPQ9J1nb29nbGUuY29t`
+> (или сгенерируй новый — см. ниже)
+
+**`fly.toml`**:
+
+```toml
+app = "my-mtg-proxy"
+primary_region = "ams"
+
+[build]
+
+[[services]]
+  internal_port = 3128
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 443
+    handlers = []
+```
+
+> `primary_region`: `ams` = Амстердам, `fra` = Франкфурт, `cdg` = Париж, `hel` = Хельсинки
+
+---
+
+### Шаг 4 — Запустить приложение
+
+```powershell
+fly launch --no-deploy --copy-config --name my-mtg-proxy
+```
+
+Fly спросит несколько вопросов — отвечай: **No** на Postgres, **No** на Redis.
+
+---
+
+### Шаг 5 — Получить IP-адрес
+
+Выделить **бесплатный shared IPv4**:
+
+```powershell
+fly ips allocate-v4 --shared --app my-mtg-proxy
+```
+
+Или **выделенный IPv4** ($2/мес, работает надёжнее):
+
+```powershell
+fly ips allocate-v4 --app my-mtg-proxy
+```
+
+Выделенный IPv6 уже есть бесплатно.
+
+Посмотреть IP:
+
+```powershell
+fly ips list --app my-mtg-proxy
+```
+
+---
+
+### Шаг 6 — Деплой
+
+```powershell
+fly deploy --app my-mtg-proxy
+```
+
+Первый деплой занимает ~2-3 минуты. В конце увидишь:
+
+```
+✓ Machine ... [app] update finished: success
+```
+
+---
+
+### Шаг 7 — Проверить и добавить в Telegram
+
+```powershell
+fly logs --app my-mtg-proxy
+```
+
+В логах должно быть что-то вроде `starting proxy` без ошибок.
+
+Ссылка для добавления в Telegram:
+
+```
+tg://proxy?server=ВАШ_IP&port=443&secret=7hk3Z6AyCsbpu4aLoUPQ9J1nb29nbGUuY29t
+```
+
+Или вручную: **Settings → Privacy and Security → Data and Storage → Use Proxy → Add Proxy → MTProto**
+
+---
+
+### Регион для минимального пинга до Telegram DC
+
+Telegram DC5 находится в Амстердаме (149.154.160.0/20). Рекомендуемые регионы:
+
+| Регион | Код | Пинг до Telegram |
+|--------|-----|-----------------|
+| Амстердам | `ams` | ~1-5ms |
+| Франкфурт | `fra` | ~10ms |
+| Лондон | `lhr` | ~10ms |
+| Хельсинки | `hel` | ~15ms |
+
+---
+
+### Как сгенерировать новый секрет (если нужен)
+
+Если Docker установлен на ПК:
+
+```powershell
+docker run --rm ghcr.io/9seconds/mtg:2 generate-secret google.com
+```
+
+Обнови `CMD` в Dockerfile с новым секретом и сделай `fly deploy` снова.
+
+---
+
+### Управление
+
+```powershell
+fly status --app my-mtg-proxy          # статус VM
+fly logs --app my-mtg-proxy            # логи в реальном времени
+fly machine restart --app my-mtg-proxy # перезапустить
+fly deploy --app my-mtg-proxy          # обновить после изменений Dockerfile
+```
+
+---
+
 ## Обновление mtg
 
 Остановить, заменить бинарник, запустить:
