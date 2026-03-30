@@ -1,0 +1,25 @@
+#!/bin/sh
+# 99-clash-restart — restart Clash (Mihomo) after WAN reconnect
+#
+# Problem: when pppoe-wan drops and reconnects, Mihomo keeps stale
+# TPROXY sockets/routes bound to the old interface. The process stays
+# alive (status green) but no traffic actually goes through the proxy.
+#
+# Fix: on ifup wan, wait for the link to stabilize, then restart clash
+# and cf-optimizer so TPROXY rules rebind to the new interface.
+#
+# Install:
+#   cp 99-clash-restart /etc/hotplug.d/iface/99-clash-restart
+#   chmod +x /etc/hotplug.d/iface/99-clash-restart
+#
+# Logs:
+#   logread | grep clash-hotplug
+
+[ "$ACTION" = "ifup" ] && [ "$INTERFACE" = "wan" ] && {
+    logger -t clash-hotplug "WAN up — restarting clash in 10s"
+    sleep 10
+    /etc/init.d/clash restart 2>/dev/null
+    sleep 5
+    /etc/init.d/cf-optimizer restart 2>/dev/null
+    logger -t clash-hotplug "clash + cf-optimizer restarted"
+}

@@ -48,6 +48,7 @@ xray-install.sh
 xray-apply-config.sh
 99-cf-dpi-bypass.nft
 98-telegram-tproxy.nft
+99-clash-restart
 99-router-mem.conf
 xray-fragment.json
 wifi-optimize.sh

@@ -87,6 +87,11 @@ echo "    98-telegram-tproxy.nft -> /etc/cf-optimizer/"
 # IMPORTANT: do NOT put these files in /etc/nftables.d/ - fw4 includes that dir
 # inside inet fw4 table context; our files define separate tables which break fw4.
 
+mkdir -p /etc/hotplug.d/iface
+cp "$SCRIPT_DIR/99-clash-restart" /etc/hotplug.d/iface/99-clash-restart
+chmod 755 /etc/hotplug.d/iface/99-clash-restart
+echo "    99-clash-restart      -> /etc/hotplug.d/iface/ (WAN reconnect → restart clash)"
+
 mkdir -p /etc/sysctl.d
 cp "$SCRIPT_DIR/99-router-mem.conf" /etc/sysctl.d/99-router-mem.conf
 chmod 644 /etc/sysctl.d/99-router-mem.conf

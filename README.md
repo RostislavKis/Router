@@ -26,6 +26,9 @@ Telegram использует хардкодные IP-адреса (`149.154.160
 **Watchdog Mihomo**
 `mihomo-watchdog.sh` каждые 10 минут обращается к `/version` и `/proxies` API. Два последовательных сбоя — перезапуск службы `clash`, ожидание восстановления до 30 секунд, затем перезапуск `cf-optimizer`. Счётчик сбоев хранится в `/var/run/mihomo-watchdog.fails`.
 
+**Автовосстановление после обрыва WAN**
+`99-clash-restart` — hotplug-скрипт. При переподключении PPPoE (или любом `ifup wan`) Mihomo остаётся живым, но держит TPROXY-сокеты к старому интерфейсу — трафик уходит в никуда, хотя статус зелёный. Скрипт ждёт 10 секунд стабилизации линка, перезапускает `clash` и `cf-optimizer`. Никакого ручного ребута.
+
 **VLESS+Reality VPN-сервер** *(опционально)*
 Xray-core запускается как VLESS-сервер на порту 443 с маскировкой под `www.microsoft.com` (XTLS-Vision). Все подключения проходят через Mihomo SOCKS5 `:7891` — к ним применяются те же правила что и к LAN-трафику. Позволяет подключаться к роутеру как к VPN извне. Управление: `xray-vless-ctl.sh {start|stop|status}`.
 
@@ -165,6 +168,7 @@ ssh root@192.168.1.1 "sh /tmp/cf-optimizer-deploy/safe-install.sh"
 | `log-rotate.sh` | cron 03:00 | Обрезает лог-файлы в tmpfs (RAM) до 500 строк |
 | `99-cf-dpi-bypass.nft` | при старте cf-optimizer | MSS clamping 150 байт для mark=2 трафика на портах 443/2053/2083/2087/2096 |
 | `98-telegram-tproxy.nft` | при старте, после Mihomo API | Помечает Telegram IP-диапазоны mark=0x1 с приоритетом -200 |
+| `99-clash-restart` | hotplug ifup wan | Перезапуск clash + cf-optimizer после переподключения WAN (PPPoE обрыв и т.п.) |
 
 Все скрипты с параллельным запуском защищены PID-based lock-файлами в `/var/run/`. Если процесс мёртв — lock удаляется автоматически. Логи: `/var/log/{script-name}.log` (tmpfs, не переживают перезагрузку).
 
@@ -212,6 +216,7 @@ ssh root@192.168.1.1 "sh /tmp/cf-optimizer-deploy/safe-install.sh"
 /etc/sysctl.conf
 /usr/local/bin/
 /etc/crontabs/root
+/etc/hotplug.d/iface/99-clash-restart
 ```
 
 После прошивки — повторить Шаг 3 (`setup-cf-optimizer.sh`). Конфиг UCI и скрипты обновятся, `config.yaml` останется нетронутым.
