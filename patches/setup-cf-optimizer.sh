@@ -50,6 +50,7 @@ cp "$SCRIPT_DIR/latency-monitor.sh"  /usr/local/bin/latency-monitor.sh  && chmod
 cp "$SCRIPT_DIR/latency-start.sh"    /usr/local/bin/latency-start.sh    && chmod 755 /usr/local/bin/latency-start.sh
 cp "$SCRIPT_DIR/mihomo-watchdog.sh"  /usr/local/bin/mihomo-watchdog.sh  && chmod 755 /usr/local/bin/mihomo-watchdog.sh
 cp "$SCRIPT_DIR/clash-watchdog.sh"   /usr/local/bin/clash-watchdog.sh   && chmod 755 /usr/local/bin/clash-watchdog.sh
+cp "$SCRIPT_DIR/mem-cleanup.sh"      /usr/local/bin/mem-cleanup.sh      && chmod 755 /usr/local/bin/mem-cleanup.sh
 cp "$SCRIPT_DIR/log-rotate.sh"       /usr/local/bin/log-rotate.sh       && chmod 755 /usr/local/bin/log-rotate.sh
 cp "$SCRIPT_DIR/geo-update.sh"       /usr/local/bin/geo-update.sh       && chmod 755 /usr/local/bin/geo-update.sh
 cp "$SCRIPT_DIR/xray-control.sh"      /usr/local/bin/xray-control.sh      && chmod 755 /usr/local/bin/xray-control.sh
@@ -69,6 +70,7 @@ echo "    latency-monitor.sh  -> /usr/local/bin/"
 echo "    latency-start.sh    -> /usr/local/bin/"
 echo "    mihomo-watchdog.sh  -> /usr/local/bin/"
 echo "    clash-watchdog.sh   -> /usr/local/bin/"
+echo "    mem-cleanup.sh      -> /usr/local/bin/"
 echo "    log-rotate.sh       -> /usr/local/bin/"
 echo "    geo-update.sh       -> /usr/local/bin/"
 echo "    xray-control.sh     -> /usr/local/bin/"
@@ -263,6 +265,7 @@ sed -i '/sni-scan/d'        "$CRON_FILE" 2>/dev/null || true
 sed -i '/latency-monitor/d' "$CRON_FILE" 2>/dev/null || true
 sed -i '/mihomo-watchdog/d' "$CRON_FILE" 2>/dev/null || true
 sed -i '/clash-watchdog/d'  "$CRON_FILE" 2>/dev/null || true
+sed -i '/mem-cleanup/d'     "$CRON_FILE" 2>/dev/null || true
 sed -i '/log-rotate/d'      "$CRON_FILE" 2>/dev/null || true
 sed -i '/geo-update/d'      "$CRON_FILE" 2>/dev/null || true
 
@@ -277,6 +280,8 @@ echo "*/30 * * * * /usr/local/bin/clash-watchdog.sh >> /var/log/clash-watchdog.l
 echo "@reboot sleep 180 && /usr/local/bin/clash-watchdog.sh >> /var/log/clash-watchdog.log 2>&1" >> "$CRON_FILE"
 # Log rotation: daily at 03:00
 echo "0 3 * * * /usr/local/bin/log-rotate.sh" >> "$CRON_FILE"
+# Memory cleanup: daily at 04:00 (clear querylog, trim logs, drop caches)
+echo "0 4 * * * /usr/local/bin/mem-cleanup.sh >> /var/log/mem-cleanup.log 2>&1" >> "$CRON_FILE"
 # Geo update: weekly Sunday at 04:00
 echo "0 4 * * 0 /usr/local/bin/geo-update.sh >> /var/log/geo-update.log 2>&1" >> "$CRON_FILE"
 # CF IP update: every 6 hours (only active if ip_updater_enabled=1)
@@ -288,6 +293,7 @@ echo "30 2 * * * /usr/local/bin/sni-scan.sh >> /var/log/sni-scan.log 2>&1" >> "$
 echo "    latency monitor:   every 15 min + LuCI trigger (1 min)"
 echo "    mihomo watchdog:   every 10 min"
 echo "    clash watchdog:    every 30 min + @reboot"
+echo "    mem cleanup:       daily 04:00"
 echo "    log rotation:      daily 03:00"
 echo "    geo update:        weekly Sun 04:00"
 echo "    CF IP update:      every 6h (activate via LuCI)"

@@ -26,6 +26,9 @@ Telegram использует хардкодные IP-адреса (`149.154.160
 **Watchdog Mihomo**
 `mihomo-watchdog.sh` каждые 10 минут обращается к `/version` и `/proxies` API. Два последовательных сбоя — перезапуск службы `clash`, ожидание восстановления до 30 секунд, затем перезапуск `cf-optimizer`. Счётчик сбоев хранится в `/var/run/mihomo-watchdog.fails`.
 
+**Ночная очистка RAM**
+`mem-cleanup.sh` запускается по cron в 04:00. Удаляет разросшийся querylog AdGuard Home (может занимать 50–100 МБ в tmpfs), обрезает логи больше 1 МБ до последних 200 строк, сбрасывает кэши ядра. На 1 ГБ роутере предотвращает OOM-kill AGH/Mihomo.
+
 **Автовосстановление после обрыва WAN**
 `99-clash-restart` — hotplug-скрипт. При переподключении PPPoE (или любом `ifup wan`) Mihomo остаётся живым, но держит TPROXY-сокеты к старому интерфейсу — трафик уходит в никуда, хотя статус зелёный. Скрипт ждёт 10 секунд стабилизации линка, перезапускает `clash` и `cf-optimizer`. Никакого ручного ребута.
 
@@ -165,6 +168,7 @@ ssh root@192.168.1.1 "sh /tmp/cf-optimizer-deploy/safe-install.sh"
 | `xray-apply-config.sh` | LuCI кнопки | Batch-добавление/удаление `dialer-proxy: xray-fragment` у всех прокси в config.yaml |
 | `latency-start.sh` | LuCI кнопка | Кладёт `/var/run/latency-trigger` и выходит — обходит 60-сек таймаут rpcd-subreaper |
 | `geo-update.sh` | cron вс 04:00 | Скачивает geoip.dat, geosite.dat, country.mmdb с MetaCubeX; если обновилось — перезапуск Mihomo |
+| `mem-cleanup.sh` | cron 04:00 | Удаляет querylog AGH, обрезает логи >1 МБ, сбрасывает кэши ядра |
 | `log-rotate.sh` | cron 03:00 | Обрезает лог-файлы в tmpfs (RAM) до 500 строк |
 | `99-cf-dpi-bypass.nft` | при старте cf-optimizer | MSS clamping 150 байт для mark=2 трафика на портах 443/2053/2083/2087/2096 |
 | `98-telegram-tproxy.nft` | при старте, после Mihomo API | Помечает Telegram IP-диапазоны mark=0x1 с приоритетом -200 |

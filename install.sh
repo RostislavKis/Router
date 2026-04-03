@@ -39,6 +39,7 @@ latency-monitor.sh
 latency-start.sh
 mihomo-watchdog.sh
 clash-watchdog.sh
+mem-cleanup.sh
 log-rotate.sh
 geo-update.sh
 cf-ip-update.sh
